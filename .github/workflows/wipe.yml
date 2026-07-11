@@ -1,0 +1,52 @@
+name: Wipe Azure
+
+# Manual teardown. Click "Run workflow" and choose how far to tear down.
+#   keep-rg    (default) delete the billable stack, KEEP the resource group + platform
+#   delete-rg  full: delete the entire resource group and purge soft-deleted names
+#
+# NOTE: the runner's OIDC identity has Azure RBAC only (not Entra directory
+# roles), so it cannot delete the Graph app registration setup-graph.sh created
+# (WIPE_GRAPH_APP=0 below). Remove that app from the VM/Cloud Shell as an admin,
+# or run `bash wipe.sh --delete-rg` there. See docs/CICD.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "Teardown scope"
+        type: choice
+        options: [keep-rg, delete-rg]
+        default: keep-rg
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: azure-stack
+  cancel-in-progress: false
+
+jobs:
+  wipe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC — no secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Wipe (${{ inputs.scope }})
+        env:
+          WIPE_GRAPH_APP: "0"   # runner can't touch Entra directory objects
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.scope }}" = "delete-rg" ]; then
+            bash wipe.sh --delete-rg
+          else
+            bash wipe.sh
+          fi

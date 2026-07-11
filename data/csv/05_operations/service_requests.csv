@@ -1,0 +1,6 @@
+ticket_id,customer_id,created_date,category,description,status,priority,sla_due_date,closed_date,customer_sentiment,remarks
+SR-B-202602-001,CTB-RTL-002,2026-02-20,Card transaction dispute (unauthorised),Customer disputes 48500 at GlobalMart Online on 2026-02-19; chargeback under review.,Open,High,2026-02-25,,Negative,Raise on next call
+SR-B-202601-002,CTB-RTL-002,2026-02-20,EMI bounce / collections call,Two personal-loan EMIs bounced; customer requests restructuring / moratorium.,Open,High,2026-02-25,,Concerned,Raise on next call
+SR-B-202602-003,CTB-RTL-002,2026-02-20,Late-payment charge dispute,Customer disputes late-payment fee on the credit card.,Open,Medium,2026-02-25,,Negative,Raise on next call
+SR-B-202603-004,CTB-RTL-002,2026-01-15,Card blocked - reissue,Customer raised card blocked - reissue,Closed,Medium,2026-02-25,2026-01-20,Neutral,Resolved
+SR-B-202604-005,CTB-RTL-002,2026-01-15,Statement request,Customer raised statement request,Closed,Low,2026-02-25,2026-01-20,Neutral,Resolved

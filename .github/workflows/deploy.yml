@@ -1,0 +1,82 @@
+name: Deploy to Azure
+
+# Manual, on-demand deploy of the billable stack. Click "Run workflow", choose
+# the chat-model SKU, and a GitHub-hosted runner logs into Azure with OIDC (no
+# stored passwords) and runs build.sh. Nothing here runs automatically on push —
+# deploys never happen without you clicking the button.
+#
+# One-time setup: run scripts/setup-github-oidc.sh (see docs/CICD.md) to create
+# the Azure trust + these repository secrets:
+#   AZURE_CLIENT_ID  AZURE_TENANT_ID  AZURE_SUBSCRIPTION_ID   (required)
+# Optional integration secrets (written into infra/common/secrets.env at run time):
+#   GRAPH_TENANT_ID  GRAPH_CLIENT_ID  GRAPH_CLIENT_SECRET  RM_USER_ID
+#   TEAMS_WEBHOOK_URL  RM_MEETING_URL  SCHEDULE_WEBHOOK_URL
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_type:
+        description: "Chat model SKU"
+        type: choice
+        options: [ptu, payg]
+        default: ptu
+
+permissions:
+  id-token: write   # required for Azure OIDC federated login
+  contents: read
+
+concurrency:
+  group: azure-stack           # never run deploy and wipe at the same time
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python   # preflight/build call `python`
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Azure login (OIDC — no secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Write infra/common/secrets.env (optional integrations)
+        env:
+          GRAPH_TENANT_ID: ${{ secrets.GRAPH_TENANT_ID }}
+          GRAPH_CLIENT_ID: ${{ secrets.GRAPH_CLIENT_ID }}
+          GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
+          RM_USER_ID: ${{ secrets.RM_USER_ID }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          RM_MEETING_URL: ${{ secrets.RM_MEETING_URL }}
+          SCHEDULE_WEBHOOK_URL: ${{ secrets.SCHEDULE_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          f=infra/common/secrets.env
+          umask 077
+          : > "$f"
+          add() { [ -n "${2:-}" ] && printf 'export %s=%q\n' "$1" "$2" >> "$f" || true; }
+          add GRAPH_TENANT_ID       "$GRAPH_TENANT_ID"
+          add GRAPH_CLIENT_ID       "$GRAPH_CLIENT_ID"
+          add GRAPH_CLIENT_SECRET   "$GRAPH_CLIENT_SECRET"
+          add RM_USER_ID            "$RM_USER_ID"
+          add TEAMS_WEBHOOK_URL     "$TEAMS_WEBHOOK_URL"
+          add RM_MEETING_URL        "$RM_MEETING_URL"
+          add SCHEDULE_WEBHOOK_URL  "$SCHEDULE_WEBHOOK_URL"
+          echo "Wrote $(wc -l < "$f") secret line(s) to $f"
+
+      - name: Build (${{ inputs.deploy_type }})
+        run: bash build.sh --type=${{ inputs.deploy_type }}
+
+      - name: Deployed URLs
+        if: success()
+        run: |
+          az containerapp list --resource-group rg-contoso-rmx-rakesh \
+            --query '[].{app:name,url:properties.configuration.ingress.fqdn}' -o table || true

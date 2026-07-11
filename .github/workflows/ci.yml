@@ -1,0 +1,40 @@
+name: CI (lint & validate)
+
+# Free, Azure-free validation. Runs on every push / PR: shell syntax, Python
+# compile, JavaScript syntax and the deterministic synthetic-data check — the
+# exact gate the deploy runs locally before it touches Azure. Creates NO
+# resources and needs NO cloud credentials.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Preflight (data + backend + JS + shell syntax)
+        run: bash infra/common/preflight_validate.sh
+
+      - name: ShellCheck (advisory)
+        continue-on-error: true
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y shellcheck
+          find . -path ./videoassist/node_modules -prune -o -name '*.sh' -print \
+            | xargs -r shellcheck -S warning || true

@@ -1,0 +1,338 @@
+{
+  "bank": "Contoso Bank",
+  "generatedFor": "Video Assist POC — synthetic data only",
+  "customer": {
+    "id": "CB-PRI-880142",
+    "name": "Rohan Mehta",
+    "age": 41,
+    "segment": "Priority (Affluent)",
+    "occupation": "Senior Product Manager",
+    "employer": "Nexus Infotech Pvt Ltd",
+    "city": "Mumbai",
+    "relationshipSince": "2014",
+    "relationshipManager": "you",
+    "riskProfile": "Moderate",
+    "pan": "ABXPM5***K",
+    "monthlyInflowINR": 285000,
+    "kyc": {
+      "status": "Re-verification due",
+      "dueDate": "2026-07-15"
+    }
+  },
+  "accounts": [
+    {
+      "type": "Savings (Priority)",
+      "number": "XXXX4471",
+      "balanceINR": 2210000,
+      "interestPct": 3.0,
+      "note": "Large idle balance earning only 3% — strong wealth/FD cross-sell opportunity."
+    },
+    {
+      "type": "Salary Account",
+      "number": "XXXX9920",
+      "balanceINR": 64000,
+      "employer": "Nexus Infotech",
+      "lastSalaryCredit": "2026-04-30",
+      "note": "No salary credit for May and June — possible job change or income disruption. Attrition and EMI-bounce risk."
+    },
+    {
+      "type": "Current (sole proprietor)",
+      "number": "XXXX1188",
+      "balanceINR": 152000,
+      "note": "Occasional consulting income."
+    }
+  ],
+  "cards": [
+    {
+      "type": "Credit",
+      "network": "Platinum Visa",
+      "last4": "6612",
+      "limitINR": 300000,
+      "outstandingINR": 264000,
+      "utilizationPct": 88,
+      "paymentDueINR": 264000,
+      "minDueINR": 13200,
+      "dueDate": "2026-06-28",
+      "note": "Very high utilization (88%). Risk of revolving credit at 42% APR. Offer limit increase, EMI conversion, or a premium card upgrade."
+    },
+    {
+      "type": "Debit",
+      "network": "Priority Debit",
+      "last4": "2034",
+      "limitINR": null,
+      "note": "Primary debit card."
+    }
+  ],
+  "fixedDeposits": [
+    {
+      "id": "FD-2231",
+      "principalINR": 1500000,
+      "ratePct": 6.1,
+      "openedOn": "2024-06-25",
+      "maturityDate": "2026-06-25",
+      "autoRenew": true,
+      "renewRatePct": 5.5,
+      "note": "Matures in 6 days. Auto-renews at a LOWER 5.5%. Proactively offer a better reinvestment — current 24-month Priority FD is 7.25%."
+    },
+    {
+      "id": "FD-1180",
+      "principalINR": 500000,
+      "ratePct": 7.0,
+      "openedOn": "2025-01-10",
+      "maturityDate": "2027-01-10",
+      "autoRenew": false,
+      "note": "Healthy."
+    }
+  ],
+  "loans": [
+    {
+      "type": "Home Loan (Contoso)",
+      "outstandingINR": 5400000,
+      "ratePct": 8.6,
+      "emiINR": 48500,
+      "tenureRemainingMonths": 142,
+      "note": "EMI auto-debit from salary account. Given missing salary credits, NACH bounce risk this month."
+    },
+    {
+      "type": "Personal Loan (external — competing bank)",
+      "outstandingINR": 450000,
+      "ratePct": 16.0,
+      "emiINR": 15800,
+      "note": "High-rate loan held elsewhere. Balance-transfer / consolidation opportunity at ~11%."
+    }
+  ],
+  "investments": [
+    {
+      "type": "Mutual Funds (via Contoso)",
+      "valueINR": 980000,
+      "note": "3 equity SIPs, one autopay recently failing."
+    },
+    {
+      "type": "Demat holdings",
+      "valueINR": 540000,
+      "note": "Direct equity, lightly traded."
+    }
+  ],
+  "recentSpends": [
+    {
+      "category": "International travel",
+      "amountINR": 180000,
+      "date": "2026-06-05",
+      "note": "Large forex spend (Singapore). Possible relocation signal — explore forex card / NRI readiness."
+    },
+    {
+      "category": "Electronics",
+      "amountINR": 142000,
+      "date": "2026-05-22",
+      "note": "Put on credit card — drove utilization up."
+    },
+    {
+      "category": "Education fees",
+      "amountINR": 95000,
+      "date": "2026-05-10"
+    }
+  ],
+  "issues": [
+    {
+      "id": "ISS1",
+      "severity": "high",
+      "summary": "FD-2231 (₹15L) matures in 6 days and auto-renews at a lower 5.5%.",
+      "talkingPoint": "Offer reinvestment at 7.25% (24m Priority FD) or a laddered FD; stop the low auto-renew."
+    },
+    {
+      "id": "ISS2",
+      "severity": "high",
+      "summary": "Credit card utilization at 88% with ₹2.64L due on 28 Jun.",
+      "talkingPoint": "Offer EMI conversion or limit increase to avoid 42% revolving interest; check repayment capacity."
+    },
+    {
+      "id": "ISS3",
+      "severity": "high",
+      "summary": "No salary credit for 2 months — possible job change / income disruption.",
+      "talkingPoint": "Gently confirm employment status; flag home-loan EMI bounce risk; reassure on options."
+    },
+    {
+      "id": "ISS4",
+      "severity": "medium",
+      "summary": "₹22L idle in savings at 3%.",
+      "talkingPoint": "Move surplus to FD/short-duration debt MF or a Priority wealth review."
+    },
+    {
+      "id": "ISS5",
+      "severity": "medium",
+      "summary": "Unresolved complaint: failed UPI autopay for SIP (CMP-77310, logged 10 Jun).",
+      "talkingPoint": "Acknowledge proactively, confirm fix, rebuild trust before pitching."
+    },
+    {
+      "id": "ISS6",
+      "severity": "medium",
+      "summary": "No life cover despite ₹54L home-loan liability.",
+      "talkingPoint": "Protection gap — offer term insurance / loan-protect cover."
+    }
+  ],
+  "crossSell": [
+    {
+      "product": "FD reinvestment at 7.25%",
+      "rationale": "FD-2231 maturing; avoid low auto-renew.",
+      "detail": "₹15L into 24-month Priority FD."
+    },
+    {
+      "product": "Pre-approved home-loan top-up ₹12L",
+      "rationale": "Strong repayment history on Contoso home loan.",
+      "detail": "Subject to income reconfirmation."
+    },
+    {
+      "product": "Balance transfer of external personal loan",
+      "rationale": "16% → ~11% saves ~₹22k/yr interest.",
+      "detail": "Consolidate to Contoso."
+    },
+    {
+      "product": "Priority Wealth review + SIP top-up",
+      "rationale": "₹22L idle savings.",
+      "detail": "Goal-based MF allocation."
+    },
+    {
+      "product": "Premium credit card upgrade (forex benefits)",
+      "rationale": "High forex + electronics spend.",
+      "detail": "Lower forex markup, higher limit."
+    },
+    {
+      "product": "Term life insurance",
+      "rationale": "Protection gap vs home loan.",
+      "detail": "₹1cr cover, loan-linked."
+    }
+  ],
+  "recentInteractions": [
+    {
+      "date": "2026-06-10",
+      "channel": "App",
+      "summary": "Raised complaint CMP-77310: SIP autopay failed."
+    },
+    {
+      "date": "2026-03-18",
+      "channel": "Branch",
+      "summary": "Discussed home-loan top-up informally; did not proceed."
+    }
+  ],
+  "transactions": {
+    "savings_XXXX4471": [
+      {
+        "date": "2026-06-18",
+        "desc": "UPI to BigBasket",
+        "type": "debit",
+        "amountINR": 3240
+      },
+      {
+        "date": "2026-06-15",
+        "desc": "NEFT to landlord (rent)",
+        "type": "debit",
+        "amountINR": 55000
+      },
+      {
+        "date": "2026-06-12",
+        "desc": "Interest credit (savings)",
+        "type": "credit",
+        "amountINR": 1680
+      },
+      {
+        "date": "2026-06-08",
+        "desc": "Card autopay attempt (failed - insufficient routing)",
+        "type": "info",
+        "amountINR": 0,
+        "note": "linked to high card due"
+      },
+      {
+        "date": "2026-06-02",
+        "desc": "Transfer from Current a/c",
+        "type": "credit",
+        "amountINR": 150000
+      },
+      {
+        "date": "2026-05-28",
+        "desc": "SIP autopay - Equity Fund (FAILED)",
+        "type": "failed",
+        "amountINR": 15000,
+        "note": "complaint CMP-77310"
+      },
+      {
+        "date": "2026-05-25",
+        "desc": "UPI to Apollo Pharmacy",
+        "type": "debit",
+        "amountINR": 2150
+      }
+    ],
+    "salary_XXXX9920": [
+      {
+        "date": "2026-04-30",
+        "desc": "Salary credit - Nexus Infotech",
+        "type": "credit",
+        "amountINR": 285000,
+        "note": "LAST salary credit - none in May/Jun"
+      },
+      {
+        "date": "2026-04-05",
+        "desc": "Home loan EMI auto-debit",
+        "type": "debit",
+        "amountINR": 48500
+      },
+      {
+        "date": "2026-03-31",
+        "desc": "Salary credit - Nexus Infotech",
+        "type": "credit",
+        "amountINR": 285000
+      },
+      {
+        "date": "2026-03-05",
+        "desc": "Home loan EMI auto-debit",
+        "type": "debit",
+        "amountINR": 48500
+      }
+    ],
+    "card_6612": [
+      {
+        "date": "2026-06-05",
+        "desc": "Singapore Airlines (forex)",
+        "type": "debit",
+        "amountINR": 180000,
+        "note": "large forex spend - relocation signal"
+      },
+      {
+        "date": "2026-05-22",
+        "desc": "Croma Electronics",
+        "type": "debit",
+        "amountINR": 142000,
+        "note": "spiked utilization to 88%"
+      },
+      {
+        "date": "2026-05-18",
+        "desc": "Amazon.in",
+        "type": "debit",
+        "amountINR": 18600
+      },
+      {
+        "date": "2026-05-10",
+        "desc": "School fees (EduPay)",
+        "type": "debit",
+        "amountINR": 95000
+      },
+      {
+        "date": "2026-05-03",
+        "desc": "Swiggy",
+        "type": "debit",
+        "amountINR": 2480
+      },
+      {
+        "date": "2026-04-28",
+        "desc": "Fuel - HPCL",
+        "type": "debit",
+        "amountINR": 4200
+      },
+      {
+        "date": "2026-04-20",
+        "desc": "Payment received - thank you",
+        "type": "credit",
+        "amountINR": 40000
+      }
+    ]
+  }
+}

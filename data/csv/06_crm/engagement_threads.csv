@@ -1,0 +1,6 @@
+customer_id,thread_id,topic,status,priority,stakeholder_id,angle,products,evidence,channel,opened_date,last_activity_date,summary
+CTB-RTL-002,TH-B-1,Card dispute / chargeback (unauthorised txn),Action needed,Critical,STK-B-1,"Resolve the unauthorised Rs 48,500 transaction first — hot-list, chargeback, provisional credit.",,disputed card txn; open ticket,,,,
+CTB-RTL-002,TH-B-2,EMI bounces / collections (SMA-1),Active,High,STK-B-1,Two EMIs bounced; offer restructuring / step-down over new credit.,PRD-PL-RESTRUCT,2 EMI bounces; SMA-1,,,,
+CTB-RTL-002,TH-B-3,Card EMI conversion (cut 42% APR),Open,High,STK-B-1,Convert the revolving balance to EMI to reduce interest and stabilise.,PRD-CC-EMI,~92% utilisation; 42% APR,,,,
+CTB-RTL-002,TH-B-4,Late-fee dispute,Action needed,Medium,STK-B-1,Review the disputed late fee; waiver as service recovery if eligible.,,disputed late fee,,,,
+CTB-RTL-002,TH-B-5,Retention / attrition risk,Watch,High,STK-B-1,Customer threatening to close the card; front-foot retention + escalation.,,low relationship value; closure threat,,,,

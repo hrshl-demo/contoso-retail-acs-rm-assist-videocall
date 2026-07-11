@@ -1,0 +1,6 @@
+rule_id,product,rule_type,threshold,interpretation,effective_date
+PR-001,Credit Card,Utilization,>80% sustained,"Revolving stress; offer EMI conversion, not a limit increase.",2025-04-01
+PR-002,Credit Card / Personal Loan,Limit increase eligibility,CIBIL>=750 AND rising income AND clean repayment,May offer pre-approved increase / loan.,2025-04-01
+PR-003,Loan,EMI bounce,>=2 bounces in 12m,Collections / SMA tag; restructuring over new credit.,2025-04-01
+PR-004,Card,Dispute / chargeback,Unauthorised txn reported,Hot-list card; raise chargeback within SLA; provisional credit per network rules.,2025-04-01
+PR-005,All,Re-KYC,KYC due / video re-KYC pending,Blocking for new credit; complete re-KYC first.,2025-04-01

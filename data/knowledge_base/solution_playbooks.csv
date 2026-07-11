@@ -1,0 +1,6 @@
+solution_id,name,illustrative_rate_pct,tenure_options_months,temporary_relief_pct,sop_refs,guardrail
+SOL-CARD-CONVERSION,Card EMI conversion scenario,18,24;36,,03_loan_eligibility_and_foir;05_collections_and_restructuring,Illustrative POC scenario only; actual card-system pricing and eligibility required.
+SOL-PL-STEPDOWN,Personal-loan temporary step-down scenario,,6,25,05_collections_and_restructuring,Requires documented hardship and authorised collections/credit approval.
+SOL-PL-DEFER,Personal-loan EMI deferral scenario,,3,,05_collections_and_restructuring;20_hardship_restructuring_playbook,Short interest-only deferral with catch-up; requires documented hardship and authorised approval.
+SOL-CONSOLIDATION,Debt consolidation scenario,16,48;60,,12_debt_consolidation_and_financial_health;19_on_call_offer_commitment_protocol,Illustrative only; blocked while video re-KYC is pending; written offer and human underwriting required.
+SOL-RETENTION-RATEMATCH,Retention rate-match scenario,,,,17_retention_and_rate_match_policy,No verbal commitment; competitor offer verified in writing; concession within authority and confirmed in writing.

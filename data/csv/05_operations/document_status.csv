@@ -1,0 +1,8 @@
+document_id,customer_id,facility_id,document_type,period_covered,required_flag,status,received_date,expiry_date,source_uri,blocking_flag,owner,remarks
+DOC-B-PAN-00,CTB-RTL-002,FAC-B-CC-001,PAN card,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/B/pan_card.pdf,N,Customer,PAN card received
+DOC-B-AAD-01,CTB-RTL-002,FAC-B-CC-001,Aadhaar (masked),KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/B/aadhaar_(masked).pdf,N,Customer,Aadhaar (masked) received
+DOC-B-ADD-02,CTB-RTL-002,FAC-B-CC-001,Address proof,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/B/address_proof.pdf,N,Customer,Address proof received
+DOC-B-INC-03,CTB-RTL-002,FAC-B-CC-001,Income proof / salary slip,KYC,Y,Pending,,,blob://synthetic/kyc/B/income_proof_/_salary_slip.pdf,N,Customer,Income proof / salary slip pending
+DOC-B-VID-04,CTB-RTL-002,FAC-B-CC-001,Video re-KYC,KYC,Y,Pending,,,blob://synthetic/kyc/B/video_re-kyc.pdf,Y,Customer,Video re-KYC pending
+DOC-B-NOM-05,CTB-RTL-002,FAC-B-CC-001,Nominee form,Account,N,Received,2025-06-01,,blob://synthetic/kyc/B/nominee_form.pdf,N,Operations,Nominee form received
+DOC-B-FOR-06,CTB-RTL-002,FAC-B-CC-001,Form 60/PAN linkage,KYC,N,Received,2025-06-01,,blob://synthetic/kyc/B/form_60/pan_linkage.pdf,N,Operations,Form 60/PAN linkage received

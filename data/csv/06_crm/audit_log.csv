@@ -1,0 +1,2 @@
+audit_id,customer_id,object_type,action,actor,timestamp,prompt_version,model_version,evidence_refs
+AUD-B-001,CTB-RTL-002,seed,data_generated,System,2026-05-24T00:00:00,n/a,n/a,deterministic generator retail-v1

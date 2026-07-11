@@ -1,0 +1,10 @@
+checklist_id,constitution,facility_type,document_type,required,blocking_if_missing
+DC-001,Individual,All,PAN card,Y,Y
+DC-002,Individual,All,Aadhaar (masked),Y,Y
+DC-003,Individual,All,Address proof,Y,N
+DC-004,Individual,Loan,Income proof / salary slip,Y,Y
+DC-005,Individual,All,Video re-KYC,Y,Y
+DC-006,Individual,Loan,Latest ITR / 6-month income proof (hardship),Y,N
+DC-007,Individual,Loan,3-month bank statements (hardship cash-flow),Y,N
+DC-008,Individual,Loan,Medical bills / discharge summary (if medical hardship),N,N
+DC-009,Individual,Loan,Competitor written offer letter (for rate-match),N,N

@@ -1,0 +1,3 @@
+account_id,customer_id,account_type,product_code,open_date,currency,status,sanction_limit_inr,drawing_power_inr,interest_rate_pct,review_due_date,last_credit_date,last_debit_date,avg_monthly_balance_inr,relationship_role
+ACC-CTB-002-SB1,CTB-RTL-002,Savings Account,SB-REGULAR,2022-11-08,INR,Active,,,3.0,,2026-03-31,2026-03-31,23824.42,Primary savings account
+ACC-FAC-B-CC-001,CTB-RTL-002,Credit Card,CC-CLASSIC,2022-11-08,INR,Active,300000,300000,42.0,2026-06-30,2026-03-31,2026-03-31,,Primary credit card

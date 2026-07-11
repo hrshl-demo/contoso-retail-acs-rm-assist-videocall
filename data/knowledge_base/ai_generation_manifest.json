@@ -1,0 +1,14 @@
+{
+  "generated_at": "2026-06-26T12:28:46.266371Z",
+  "deterministic_seed": "contoso-msme-v1",
+  "customers": 3,
+  "deterministic_case_ids": 43,
+  "cases_enriched": 37,
+  "validation_status": "passed",
+  "validation_errors": [],
+  "validation_warnings": [],
+  "source_files": {
+    "csv_dir": "data/csv",
+    "enriched_cases": "data/knowledge_base/crm_cases_enriched.csv"
+  }
+}

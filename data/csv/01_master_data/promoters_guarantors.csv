@@ -1,0 +1,3 @@
+person_id,customer_id,role,name,age,shareholding_pct,bureau_score_band,net_worth_band_inr,kyc_status,pep_flag,mobile_masked,email_masked
+PERS-003,CTB-RTL-002,Primary holder,Rakesh Sharma,41,100.0,620-660,8-15 lakh,Due,N,XXXXXX1003,rakesh@example.test
+PERS-004,CTB-RTL-002,Nominee,Sunita Sharma,38,0.0,n/a,n/a,Valid,N,XXXXXX1004,sunita@example.test

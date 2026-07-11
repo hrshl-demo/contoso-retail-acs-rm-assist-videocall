@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Video Assist — Relationship Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body data-phase="idle">
+  <div class="shell narrow">
+    <header class="topbar">
+      <div class="brand"><span class="diamond" aria-hidden="true"></span><span class="wordmark">Video&nbsp;Assist</span></div>
+      <div class="pill" id="statusPill" data-state="idle"><span class="dot" aria-hidden="true"></span><span id="statusText">Ready</span></div>
+    </header>
+
+    <section class="setup" id="setup">
+      <div class="setup-copy">
+        <h1>Speak with your Relationship Manager</h1>
+        <p>Paste the meeting link your RM shared, then start your secure video session.</p>
+      </div>
+      <div class="setup-controls">
+        <input id="meetingLink" type="text" inputmode="url" placeholder="Paste meeting link (https://teams.microsoft.com/l/meetup-join/…)" />
+        <button id="startBtn" class="btn-primary" data-loading="false"><span class="btn-label">Start video session</span><span class="spinner" aria-hidden="true"></span></button>
+      </div>
+      <p class="consent">Your session is recorded and AI-assisted to help your Relationship Manager serve you better.</p>
+    </section>
+
+    <main class="card stage-card">
+      <section class="stage">
+        <figure class="tile"><div id="remoteVideo" class="frame"><span class="ph">Waiting for your RM…</span></div><figcaption>Relationship Manager</figcaption></figure>
+        <figure class="tile self"><div id="localVideo" class="frame"><span class="ph">Camera preview</span></div><figcaption>You</figcaption></figure>
+      </section>
+      <section class="controls" aria-label="Call controls">
+        <button id="micBtn" class="ctrl" data-on="true" aria-pressed="false"><svg viewBox="0 0 24 24" class="ic"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" fill="none"/></svg><span class="label">Mute</span></button>
+        <button id="camBtn" class="ctrl" data-on="true" aria-pressed="false"><svg viewBox="0 0 24 24" class="ic"><rect x="3" y="6" width="12" height="12" rx="2" fill="none"/><path d="M15 10l6-3v10l-6-3z" fill="none"/></svg><span class="label">Stop video</span></button>
+        <button id="leaveBtn" class="ctrl danger"><svg viewBox="0 0 24 24" class="ic"><path d="M21 15.5a2 2 0 0 1-.6 1.4l-1.3 1.3a2 2 0 0 1-2.3.4A18 18 0 0 1 5 7.2a2 2 0 0 1 .4-2.3L6.7 3.6A2 2 0 0 1 9.6 4l1.2 2.2a2 2 0 0 1-.4 2.4l-.9.8a12 12 0 0 0 4.1 4.1l.8-.9a2 2 0 0 1 2.4-.4L19 14a2 2 0 0 1 2 1.5z" fill="currentColor" stroke="none"/></svg><span class="label">Leave</span></button>
+      </section>
+    </main>
+
+    <div id="debugPanel" class="debug" hidden>
+      <span>debug — simulate a customer line:</span>
+      <div class="sim-row"><input id="simInput" type="text" placeholder="e.g. My FD is about to mature, what are my options?" /><button id="simBtn">Send</button></div>
+    </div>
+
+    <details class="logbox"><summary>Session details</summary><pre id="log"></pre></details>
+  </div>
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

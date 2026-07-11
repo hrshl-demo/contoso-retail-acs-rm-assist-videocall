@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#ffffff" />
+<title>Contoso Bank · Mobile</title>
+<link rel="stylesheet" href="/bank.css" />
+</head>
+<body>
+  <div class="phone">
+    <!-- App bar -->
+    <header class="appbar">
+      <div class="hello">
+        <div class="avatar" id="meAv">R</div>
+        <div>
+          <div class="hi">Hi, <b id="meName">Rakesh</b></div>
+          <div class="tier" id="meTier">Contoso Priority Banking</div>
+        </div>
+      </div>
+      <button class="iconbtn" aria-label="Notifications">
+        <svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0-6 6v4l-1.5 2.5h15L18 13V9a6 6 0 0 0-6-6zM9.5 18a2.5 2.5 0 0 0 5 0" fill="none"/></svg>
+        <span class="badge">2</span>
+      </button>
+    </header>
+
+    <main class="scroll">
+      <!-- Balance hero -->
+      <section class="hero">
+        <div class="hero-lbl">Available balance</div>
+        <div class="hero-amt" id="heroAmt">₹23,824</div>
+        <div class="hero-row">
+          <span class="hero-acc" id="heroAcc">Savings •• 1123</span>
+          <span class="hero-safe">🔒 Secured</span>
+        </div>
+      </section>
+
+      <!-- Quick actions -->
+      <section class="quick" id="quick"></section>
+
+      <!-- Relationship Manager -->
+      <section class="card rmcard">
+        <div class="rm-top">
+          <div class="rm-av" id="rmAv">PN</div>
+          <div class="rm-id">
+            <div class="rm-name" id="rmName">Priya Nair</div>
+            <div class="rm-sub" id="rmSub">Your Relationship Manager</div>
+            <div class="rm-branch" id="rmBranch">Contoso Bank · Pune</div>
+          </div>
+          <span class="online"><span class="odot"></span>Online</span>
+        </div>
+        <button class="btn-call" id="callBtn">
+          <svg viewBox="0 0 24 24" class="camic"><rect x="3" y="6" width="12" height="12" rx="2" fill="none"/><path d="M15 10l6-3v10l-6-3z" fill="none"/></svg>
+          Video call your RM
+        </button>
+        <div class="rm-hint">Talk face-to-face about your card dispute &amp; EMIs — no link to copy, we connect you.</div>
+      </section>
+
+      <!-- Accounts -->
+      <div class="sec-lbl">Your accounts</div>
+      <section id="accounts"></section>
+
+      <!-- Credit health -->
+      <section class="card credit">
+        <div>
+          <div class="credit-lbl">Credit score</div>
+          <div class="credit-score" id="creditScore">642</div>
+          <div class="credit-band" id="creditBand">Needs attention</div>
+        </div>
+        <div class="gauge" id="gauge"><span>642</span></div>
+      </section>
+
+      <div class="foot">Contoso Bank · Synthetic demo data · Member since <span id="memberSince">2022</span></div>
+    </main>
+
+    <!-- Bottom nav -->
+    <nav class="tabbar">
+      <button class="tab active"><svg viewBox="0 0 24 24"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z" fill="none"/></svg><span>Home</span></button>
+      <button class="tab"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10" fill="none"/></svg><span>Activity</span></button>
+      <button class="tab tab-call" id="tabCall"><span class="fab"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="12" height="12" rx="2" fill="none"/><path d="M15 10l6-3v10l-6-3z" fill="none"/></svg></span><span>Call RM</span></button>
+      <button class="tab"><svg viewBox="0 0 24 24"><path d="M3 10h18M7 15h4M6 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" fill="none"/></svg><span>Cards</span></button>
+      <button class="tab"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="none"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6" fill="none"/></svg><span>Profile</span></button>
+    </nav>
+  </div>
+
+  <!-- Call overlay -->
+  <div class="overlay hide" id="overlay" aria-hidden="true">
+    <div class="sheet">
+      <button class="close" id="closeBtn" aria-label="Close">✕</button>
+      <div class="call-rm">
+        <div class="call-av" id="callAv">PN</div>
+        <div class="call-name" id="callName">Priya Nair</div>
+        <div class="call-role">Your Relationship Manager</div>
+      </div>
+
+      <!-- scheduling phase -->
+      <div id="phaseWait">
+        <div class="ring" id="ring"><div class="ring-inner"><span class="ring-time" id="ringTime">1:00</span></div></div>
+        <div class="wait-title">Setting up your secure video call…</div>
+        <ul class="steps" id="steps">
+          <li data-k="notify" class="doing">Notifying your RM in Microsoft Teams</li>
+          <li data-k="room">Reserving a secure meeting room</li>
+          <li data-k="ready">Getting your call ready</li>
+        </ul>
+        <div class="wait-note">No link to copy or paste — tap <b>Join call</b> the moment it's ready.</div>
+      </div>
+
+      <!-- ready phase -->
+      <div id="phaseReady" class="hide">
+        <div class="ready-ic">✓</div>
+        <div class="ready-title">Your RM is ready</div>
+        <div class="ready-sub"><b id="readyName">Priya Nair</b> has joined the secure meeting.</div>
+        <button class="btn-join" id="joinBtn">▶ Join call</button>
+        <div class="ready-tip">Please allow camera &amp; microphone when asked.</div>
+      </div>
+
+      <button class="cancel" id="cancelBtn">Cancel</button>
+    </div>
+  </div>
+
+  <script src="/bank.js"></script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Schedule a video call · Contoso Bank</title>
+<style>
+  :root{
+    --ink:#0b1020; --ink2:#141b2e; --panel:#161d31; --line:#26304a; --line2:#2f3a58;
+    --text:#eaf0fb; --dim:#9aa7c2; --faint:#6c7a99; --gold:#e7b85c; --gold2:#f0cd86;
+    --accent:#5b8cff; --green:#37d39b; --r:16px; --ease:cubic-bezier(.22,.61,.36,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{min-height:100vh;background:radial-gradient(1100px 600px at 80% -10%,#16203c 0,transparent 55%),linear-gradient(180deg,#0b1020,#0e1428);
+    color:var(--text);font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased;font-size:15px;line-height:1.5}
+  .wrap{max-width:920px;margin:0 auto;padding:34px 22px 60px}
+  .brand{display:flex;align-items:center;gap:12px;margin-bottom:26px}
+  .logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--gold),var(--gold2));display:grid;place-items:center;color:#1a1304;font-weight:800;font-size:19px}
+  .brand b{font-size:15px;letter-spacing:.01em}.brand .s{font-size:11px;color:var(--dim);letter-spacing:.16em;text-transform:uppercase;margin-top:2px}
+  h1{font-size:27px;font-weight:700;letter-spacing:-.01em;margin:6px 0 6px}
+  .sub{color:var(--dim);max-width:60ch;margin-bottom:24px}
+  .card{background:linear-gradient(180deg,var(--panel),#131a2c);border:1px solid var(--line);border-radius:var(--r);padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);margin-bottom:18px}
+  .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:700;margin-bottom:12px}
+  .rm{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .rm .av{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#2f6bff,#5b8cff);display:grid;place-items:center;font-weight:700}
+  .day{margin:18px 0 8px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:10px}
+  .day .pill{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);border:1px solid #5a4a22;background:#241d0c;border-radius:999px;padding:3px 9px}
+  .slots{display:flex;flex-wrap:wrap;gap:9px}
+  .slot{border:1px solid var(--line2);background:#1b2238;color:var(--text);border-radius:11px;padding:9px 14px;font-weight:600;font-size:14px;cursor:pointer;transition:.15s var(--ease)}
+  .slot:hover{border-color:var(--gold);transform:translateY(-1px)}
+  .slot[aria-pressed="true"]{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#1a1304;border-color:transparent;box-shadow:0 8px 20px rgba(231,184,92,.25)}
+  .slot[disabled]{opacity:.32;cursor:not-allowed;text-decoration:line-through}
+  .form{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px}
+  input,textarea{width:100%;background:#10182c;border:1px solid var(--line2);color:var(--text);border-radius:11px;padding:11px 13px;font:inherit}
+  input:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .btn{border:1px solid var(--line2);background:#1b2238;color:var(--text);font-weight:700;border-radius:12px;padding:12px 18px;cursor:pointer;font-size:14px;transition:.15s var(--ease)}
+  .btn:hover{transform:translateY(-1px);border-color:var(--gold)}
+  .btn.primary{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#1a1304;border-color:transparent;box-shadow:0 10px 26px rgba(231,184,92,.28)}
+  .btn.join{background:linear-gradient(135deg,#13b07a,#37d39b);color:#06231a;border-color:transparent}
+  .btn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+  .muted{color:var(--dim);font-size:13px}
+  .ok{display:inline-flex;align-items:center;gap:7px;color:var(--green);font-weight:600}
+  .pickline{color:var(--dim);font-size:13px;margin-top:10px;min-height:18px}
+  .conf{display:flex;gap:14px;align-items:flex-start}
+  .conf .ic{width:42px;height:42px;border-radius:12px;background:#0f2e22;border:1px solid #1d5740;display:grid;place-items:center;color:var(--green);font-size:20px;flex:none}
+  .status{font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;padding:4px 9px;border-radius:999px}
+  .status.req{color:var(--gold);background:#241d0c;border:1px solid #5a4a22}
+  .status.ready{color:var(--green);background:#0f2e22;border:1px solid #1d5740}
+  .hide{display:none}
+  @media(max-width:600px){.form{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand"><div class="logo">C</div><div><b>Contoso Bank · Priority MSME</b><div class="s">Video appointment</div></div></div>
+
+    <!-- STEP A: pick a slot -->
+    <section id="pick">
+      <h1>Schedule a video call with your RM</h1>
+      <p class="sub">Choose a time in the next couple of days. Your Relationship Manager is notified instantly; at the appointment time you’ll join the same secure video call from this page.</p>
+      <div class="card">
+        <div class="lbl">Your Relationship Manager</div>
+        <div class="rm"><div class="av" id="rmAv">RM</div><div><b id="rmName">Loading…</b><div class="muted" id="rmMeta">Contoso Bank branch</div></div></div>
+        <div id="avail"><div class="muted" style="padding:14px 0">Loading availability…</div></div>
+        <div class="pickline" id="pickLine"></div>
+      </div>
+      <div class="card">
+        <div class="lbl">Your details</div>
+        <div class="form">
+          <input id="name" placeholder="Your name" />
+          <input id="contact" placeholder="Mobile or email (optional)" />
+        </div>
+        <textarea id="note" placeholder="Anything you’d like to discuss? (optional)" style="margin-top:12px;min-height:64px"></textarea>
+        <div class="row">
+          <button class="btn primary" id="bookBtn" disabled>Request this slot</button>
+          <span class="muted" id="bookHint">Pick a time above to continue.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP B: confirmation + join -->
+    <section id="confirm" class="hide">
+      <h1>You’re booked</h1>
+      <p class="sub">We’ve let <span id="cName">your RM</span> know. Keep this page handy — when your RM starts the call, a <b>Join</b> button appears here. You can also return to this link anytime.</p>
+      <div class="card">
+        <div class="conf">
+          <div class="ic">✓</div>
+          <div style="flex:1">
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <b id="cWhen" style="font-size:17px">—</b>
+              <span class="status req" id="cStatus">Requested</span>
+            </div>
+            <div class="muted" style="margin-top:6px">Booking <span id="cId" class="mono">—</span></div>
+            <div class="muted" id="cWait" style="margin-top:12px">Waiting for your RM to start the meeting…</div>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn join hide" id="joinBtn">▶ Join the video call</button>
+          <button class="btn" id="refreshBtn">Check again</button>
+        </div>
+        <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+          <div class="lbl">Have a link from your RM?</div>
+          <div class="form" style="grid-template-columns:1fr auto">
+            <input id="manualLink" placeholder="Paste the Teams meeting link your RM shared" />
+            <button class="btn" id="manualJoin">Join</button>
+          </div>
+          <div class="muted" style="margin-top:8px">Tip: open this in your phone’s browser (Chrome/Safari) — not inside WhatsApp/Instagram — so the camera works.</div>
+        </div>
+      </div>
+      <button class="btn" id="newBtn" style="margin-top:4px">Book a different time</button>
+    </section>
+  </div>
+  <script src="/schedule.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+counterparty_id,customer_id,counterparty_name,counterparty_type,relationship_start_date,location,concentration_band,related_party_flag,avg_monthly_value_inr,payment_behavior
+CP-B-INC,CTB-RTL-002,Business inflow / Salary draw,Buyer,2022-05-01,Maharashtra,High,N,105000,Irregular
+CP-B-GM,CTB-RTL-002,GlobalMart Online,Supplier,2022-05-01,Maharashtra,Medium,N,21000,Regular
+CP-B-FUEL,CTB-RTL-002,Indian Oil Fuel,Supplier,2022-05-01,Maharashtra,Low,N,16800,Regular
+CP-B-FOOD,CTB-RTL-002,Zomato,Supplier,2022-05-01,Maharashtra,Low,N,14700,Regular
+CP-B-UTIL,CTB-RTL-002,MSEDCL / Utilities,Supplier,2022-05-01,Maharashtra,Low,N,10500,Regular
+CP-B-SHOP,CTB-RTL-002,Reliance Trends,Supplier,2022-05-01,Maharashtra,Medium,N,23100,Regular
+CP-B-ATM,CTB-RTL-002,ATM cash withdrawal,Supplier,2022-05-01,Maharashtra,Low,N,18900,Regular
+CP-B-BANK,CTB-RTL-002,Contoso Bank,Bank,2022-05-01,Maharashtra,Low,N,0,Regular

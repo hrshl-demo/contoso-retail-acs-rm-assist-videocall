@@ -1,0 +1,2 @@
+customer_id,person_id,score,as_of,bureau_score_band,enquiries_6m,dpd_flag,dpd_count,remarks,bureau_id,report_date,score_band,active_tradelines,total_outstanding_inr,written_off_flag,settled_flag
+CTB-RTL-002,PERS-003,642,2026-04-01,Subprime (fell from 705),5,Y,2,Score fell on card revolve + 2 EMI bounces; recent enquiries,,,,,,,

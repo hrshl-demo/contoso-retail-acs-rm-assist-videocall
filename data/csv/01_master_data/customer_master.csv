@@ -1,0 +1,2 @@
+customer_id,legal_name,display_name,constitution,pan_masked,gstin_masked,udyam_reg_no,customer_since,home_branch_code,rm_id,segment,risk_category,kyc_status,next_kyc_due_date,consent_status,relationship_value_score,priority_sector_flag,created_at,updated_at
+CTB-RTL-002,Rakesh Sharma,Rakesh Sharma,Individual,BKSPS4467L,,,2022-11-08,CTB-PUN-017,RM-2207,Retail - Self-employed,Medium,Due,2026-07-31,Active,41,N,2026-05-01T00:00:00,2026-05-20T14:30:00

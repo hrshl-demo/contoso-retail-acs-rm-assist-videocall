@@ -1,0 +1,5 @@
+opportunity_id,customer_id,opportunity_type,stage,recommended_band_inr,status,blockers
+OPP-B-001,CTB-RTL-002,Credit Limit Increase,Not eligible,,Blocked,Declining income; 2 EMI bounces (SMA-1); high utilisation; open dispute; re-KYC due
+OPP-B-002,CTB-RTL-002,Card EMI Conversion / Balance Transfer,Qualified,,Open,Cuts 42% APR; service recovery
+OPP-B-003,CTB-RTL-002,Personal Loan Restructuring,Qualified,,Open,SMA-1; restructuring over new credit
+OPP-B-004,CTB-RTL-002,New Top-up Loan,Hold,,Blocked,Resolve dispute + collections first

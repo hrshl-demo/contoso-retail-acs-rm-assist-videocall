@@ -1,0 +1,330 @@
+contoso-retail-rm-assist-rakesh
+version: v2.4.0
+build_date: 2026-07-11
+changelog:
+  v2.4.0 - GITHUB-READY: published as a GitHub project with CI/CD and operator docs.
+           * GitHub Actions (.github/workflows/): ci.yml (free lint/validate on push),
+             deploy.yml (manual, Azure OIDC -> build.sh, ptu/payg), wipe.yml (manual,
+             keep-rg/delete-rg). No passwords stored; images build via 'az acr build',
+             so the runner needs no Docker and no VM.
+           * scripts/setup-github-oidc.sh: one-shot Azure<->GitHub OIDC trust + repo secrets.
+           * docs/: CICD.md (VS Code + CI/CD walkthrough), ENTRA_PIM_ADMIN.md (temporary
+             Global Admin via PIM + automated setup-graph consent), POWER_AUTOMATE.md
+             (Teams nudges + email/scheduling flows).
+           * SECURITY: removed the signed TEAMS_WEBHOOK_URL default from env.sh (now empty) —
+             supply it via infra/common/secrets.env (git-ignored) or a GitHub secret. Added
+             secrets.env.example, hardened .gitignore (outputs.env/logs/tars), added LICENSE (MIT).
+           No change to the deploy/wipe logic or the demo itself.
+  v2.3.2 - ROBUSTNESS: self-healing foundation on build + a wipe that removes ALL strays.
+           * SELF-HEAL (infra/rebuild-parallel.sh + env.sh): 'bash build.sh' no longer dies with
+             "Foundation is incomplete / run build_rg.sh first" when the RG/platform is missing
+             (after a full wipe, a fresh extract, or a partial teardown). It now auto-builds
+             phase0+phase1 first, then continues — a true one-command deploy from any state.
+             New non-fatal env.sh helper foundation_present() drives the decision; set
+             AUTO_FOUNDATION=0 to restore the old hard stop. build_rg.sh is now optional.
+           * WIPE STRAYS (infra/wipe-parallel.sh): the teardown also deletes the Entra app
+             registration setup-graph.sh created (a directory object 'az group delete' can't see,
+             so it used to linger) and clears stale local state (infra/common/secrets.env,
+             phase*/outputs.env). New knobs WIPE_GRAPH_APP / WIPE_LOCAL_STATE (default on);
+             soft-deleted CogSvc purge unchanged. Fixes the orphaned-app-registration leak.
+  v2.3.1 - FIX: normalized setup-graph.sh (and the customer web assets graph.js/bank.*) to LF line
+           endings. The v2.3.0 tarball shipped setup-graph.sh with Windows CRLF, which broke bash on
+           Linux ("set: pipefail: invalid option name" at line 33). Tarballs carry raw bytes, so the
+           repo .gitattributes (git-only) never applied - the files are now LF on disk. No behavior
+           change; re-extract this tarball and re-run `bash setup-graph.sh`.
+  v2.3.0 - FEATURE: REAL Teams meeting provisioning + RM calendar event, and a light-theme customer app.
+           Fixes the demo's core gap where the auto-generated RM link was synthetic (would not open) and
+           made the RM/customer join the SAME real meeting.
+           * REAL MEETING (videoassist/graph.js NEW): createRmCalendarMeeting() creates an actual calendar
+             event on the RM's Outlook/Teams calendar with a Teams online meeting attached, via Microsoft
+             Graph app-only (client credentials, Calendars.ReadWrite). Returns the real joinUrl that BOTH
+             the RM (from Teams/Outlook) and the customer (via ACS interop) join. Fully automated - no user
+             in the loop. Config: GRAPH_TENANT_ID/GRAPH_CLIENT_ID/GRAPH_CLIENT_SECRET/RM_USER_ID
+             (+ MEETING_TIMEZONE, MEETING_DURATION_MINUTES).
+           * provisionMeetingLink() tiers (server.js): SCHEDULE_WEBHOOK_URL (Power Automate, no admin) ->
+             Microsoft Graph (real calendar event) -> RM_MEETING_URL (standing meeting) -> synthetic demo.
+             Booking now records calendared/calendarEventId/calendarWebLink; the RM Teams card
+             (teams.js callRequestText) shows a "Added to your calendar" line with the event link.
+           * SAME MEETING: the customer's opaque /call/:id/join returns the identical link the RM card
+             carries - verified end-to-end (customer join link == RM meeting link, synthetic=false).
+           * UI (videoassist/public/bank.css rewrite): the customer mobile app is now a clean LIGHT theme
+             (white surfaces on a soft tinted background, branded blue hero, green connect CTA) replacing
+             the previous dark look. bank.html theme-color + bank.js credit gauge updated to the light track.
+           * INFRA: env.sh + phase9 up.sh wire the GRAPH_* / RM_USER_ID vars (client secret stored as the
+             Container App secret graph-client-secret).
+           * AUTOMATION: NEW setup-graph.sh — one-shot `az` script that creates the Entra app registration,
+             adds Microsoft Graph Calendars.ReadWrite (Application), grants tenant admin consent, mints a
+             client secret, and writes infra/common/secrets.env (git-ignored, auto-sourced by env.sh). No
+             portal clicks: after `bash setup-graph.sh` the next `bash build.sh` deploys the calendared flow.
+             NEW root .gitignore keeps secrets.env out of git.
+  v2.2.0 - FEATURE: second (customer) portal + fully-automated instant video call. Adds a logged-in
+           Contoso mobile banking app for Rakesh Sharma (CTB-RTL-002) and a one-tap "Video call your RM"
+           flow where the RM-side Teams link is generated automatically and the customer never sees it.
+           * FRONTEND (videoassist/public): NEW bank.html + bank.css + bank.js - a mobile banking portal
+             (accounts, credit card over-limit + personal-loan tiles, CIBIL gauge, RM card) with a
+             "Video call your RM" button. Tapping it opens a call sheet: a ~60s countdown ("notifying RM
+             in Teams -> reserving room -> ready"), then a "Join call" button. The customer joins via
+             ?booking=<id> only - no meeting link is ever shown.
+           * BACKEND (videoassist/server.js): NEW GET /me (customer-safe profile, baked Rakesh figures),
+             POST /call/request (schedules the call CALL_LEAD_SECONDS out, auto-provisions the RM Teams
+             link server-side, posts a meeting request to the RM's Teams), GET /call/:id (customer-safe
+             status, no link), GET /call/:id/join (opaque link, only once live), GET /bank. NEW
+             provisionMeetingLink(): SCHEDULE_WEBHOOK_URL (Power Automate) -> RM_MEETING_URL (standing
+             meeting) -> synthetic demo link. teams.js gains callRequestText() for the RM meeting card.
+           * SPA (videoassist/client/main.js): ?booking=<id> auto-join - fetches the link opaquely from
+             /call/:id/join, hides the paste UI, relabels Start to "Join now" so the customer never sees
+             a Teams link. Existing ?link= handoff and live-call/nudge logic unchanged.
+           * CRM (frontend-crm/app.js): Step 7 panel now leads with the mobile-app instant call - new
+             openCustomerApp()/copyCustomerAppLink() buttons; blurb + step cards updated.
+           * INFRA: env.sh adds RM_MEETING_URL + CALL_LEAD_SECONDS (default 60); phase9 up.sh passes them
+             through and prints the /bank launch URL.
+           * BUILD SPEED: videoassist Dockerfile is now multi-stage (build -> slim runtime) using npm ci;
+             browser-only SDKs (ACS calling, speech) moved to devDependencies so the runtime image installs
+             prod deps only (express + Entra identity + openai) - smaller image, faster push/pull + cold
+             start. package-lock.json regenerated; .dockerignore trims *.md from the build context.
+  v2.1.9 - FEATURE: single-customer "Customer 360" upgrade to the Raw Data tab + a Rakesh-only data pack.
+           * DATA: pruned the CSV pack to ONLY Rakesh Sharma (CTB-RTL-002); removed the other two seeded
+             customers (CTB-RTL-001 Meera Nair, CTB-RTL-005 Vikram Anand Rao) from all customer_id tables
+             so the RM never sees unrelated customers. Deleted 6 orphaned CTB-MSME "ghost" golden files
+             (07_voice/*, 08_ai_expected_outputs/*) that referenced non-existent customers and were read by
+             nothing; dropped their store.py mappings + rawdata.py descriptions. CSV pack 37 -> 31 files.
+           * BACKEND: new bearer-gated GET /v1/rawdata/profile - assembles Rakesh's FULL Customer 360 live
+             from the seed tables (identity, KYC + blocking docs, accounts, facilities with monthly finance
+             charge, CIBIL bureau, spend-by-category analytics, recent transactions, repayments, disputes /
+             service requests, documents, opportunities, guarantors, RM interactions).
+           * FRONTEND: Raw Data tab now opens on a one-click "* Rakesh Sharma - Customer 360" hero card that
+             renders the whole profile inside the CRM (KPI chips, card grid, spend bars, timeline) with new
+             c360 CSS; download-as-JSON. app.js / ui.css only.
+           * VALIDATOR: validate_seed.py rewritten from the 2-customer A/B contrast to a single-customer
+             Rakesh stress-story check (income down, >=2 bounces, sub-700 CIBIL, disputed txn, no foreign
+             customer_ids). Passes 10/10 checks, 0 warnings.
+           * DEFENSIVE: videoassist DEFAULT_CUSTOMER_ID CTB-RTL-001 -> CTB-RTL-002 (the old default pointed
+             at a now-deleted customer). Live call still grounds on the Tool API by customer_id (unchanged).
+           * No infra / build / wipe changes; deploy + wipe commands identical to v2.1.8.
+  v2.1.8 - FEATURE: new "Raw Data" cockpit tab so the RM can PROVE the demo is fact-backed by opening
+           the actual source records and Indian-banking SOPs live inside the CRM during the call
+           (addresses "I cannot just tell customers it is a video call without proof").
+           * BACKEND: new read-only, bearer-gated backend/app/routes/rawdata.py - GET /v1/rawdata/catalog
+             (grouped manifest of all shippable files) + GET /v1/rawdata/file?id=... (raw content),
+             path-traversal-safe across three baked roots: data/csv, data/knowledge_base and docs/sop.
+             config.py gains sop_dir (SOP_DIR, default /app/data/sop); backend/Dockerfile now bakes
+             docs/sop into the image (build context is already the repo root, so the COPY resolves);
+             main.py registers the router. The SOP corpus that feeds the RAG policy index is unchanged.
+           * FRONTEND: a "Raw Data" menubar item opens a two-pane explorer (searchable grouped file
+             list + renderer) that renders CSV as a sortable, client-filtered table (500-row display cap
+             with a live filter), JSON syntax-highlighted, and Markdown SOPs as rendered policy -
+             polished, namespaced .rd-* CSS in ui.css, all vanilla (zero new dependencies). app.js gains
+             renderRawData() + helpers; index.html and setMenu/menuNav wired; every cell/section is
+             HTML-escaped (no injection). Styles live in ui.css (served no-store) to avoid stale cache.
+           * VERIFY (foolproof pass): live-call answer + nudge engine reconfirmed already-overhauled in
+             v2.1.6 and LEFT INTACT (no regressions); wipe/build rechecked - bash -n clean on all
+             build/wipe/infra scripts, backend build context includes docs/sop, frontend Dockerfile
+             ships frontend-crm/html, validate_seed.py 13/13, rawdata endpoints pass a TestClient
+             integration (catalog/file/401/400-traversal/404). Additive feature + docs only; no
+             data / answer / nudge changes.
+  v2.1.7 - FIX: phase2-ai could strand a rebuild when Azure AI Search landed in a terminal
+           'Failed' provisioningState (a regional capacity blip during allocation). Because the
+           Search name is deterministic and phase2 deploys in Incremental mode, ARM REUSED the
+           Failed resource, so both in-run retries AND every fresh `build.sh` failed identically
+           ("ResourceDeploymentFailure ... terminal provisioning state 'Failed'" on
+           srch-rmx-<suffix>) until it was deleted by hand -- previously needing a full wipe.
+           infra/phase2-ai/up.sh now runs a _heal_failed_search guard at the top of each
+           deployment attempt: it deletes a Search stuck in failed/canceled state (by its
+           deterministic name) so the attempt recreates it clean, while leaving a healthy
+           (Succeeded) or still-provisioning Search untouched for reuse. AI Search stays in
+           AZ_REGION_SEARCH (default centralindia -- the reliable India Search region; South
+           India is capacity-constrained), baked in with no runtime export required. Infra-only
+           -- no data / answer / nudge changes.
+  v2.1.6 - CONTENT: live-call answer + nudge overhaul for the Rakesh Sharma POC so every one of the
+           ~22 demo moments tells ONE coherent, SOP-grounded story instead of generic Q&A. Three parts:
+           * DATA: fixed the "2 vs 3 bounced EMI" contradiction across the committed CSV pack; the
+             personal loan is now a genuine SMA-1 (Apr + May 2026 bounced EMIs, ~50 dpd, next EMI due
+             2026-06-07). Touched data/csv 02_accounts, 03_credit, 05_operations, 06_crm.
+           * EVIDENCE: new backend/app/services/retail_reference.py is the single source of truth for
+             every derived retail number (SMA class + days-to-NPA, card statement / minimum due, monthly
+             finance charge, fee schedule, consolidation maths, prepayment / foreclosure, retention /
+             rate-review). Wired into collateral.build_evidence_pack -> facts["reference"]; the KYC
+             facts now carry pending_documents + a blocking flag.
+           * ENGINE: videoassist/nudge-engine.js rewritten - 8 new grounded answer tools (verify_caller,
+             fees, restructuring, consolidation, prepayment, sma, retention, guarantor), upgraded
+             card / kyc / credit_score / loans answers, and scam / attrition / hardship nudges that cite
+             the real figures. Classifier prompts extended to route the new intents. SOP-16 worked
+             example and the retention rate-review floor (SOP-17 ~1.5% cap) aligned. Fully deterministic;
+             the LLM only classifies intent, wording comes from template code reading facts.
+  v2.1.5 - FIX: rebuild after a wipe failed at the preflight gate with a SILENT "phase3 exit 1"
+           ("Generate and validate deterministic datasets (exit 1)", no error text). Two-part bug:
+           * ROOT CAUSE: the wipe (wipe-parallel.sh -> phase3-data/down.sh) ran `rm -rf data/csv`,
+             treating the CSV pack as GENERATED. But data/csv is a COMMITTED, deterministic pack that
+             ships with the repo; phase3-data/up.sh only VALIDATES it (validate_seed.py) and never
+             regenerates it. So after one wipe the pack was gone and every rebuild failed. FIX:
+             phase3-data/down.sh no longer deletes data/csv — Phase 3 creates no Azure resources, so
+             teardown is now a no-op that PRESERVES data/csv, data/knowledge_base and docs/sop (all
+             committed artifacts). Wipe -> rebuild is now idempotent.
+           * ERROR-SURFACING: phase3-data/up.sh line ~22 computed CSV_COUNT via
+             `find data/csv ... | wc -l` under `set -euo pipefail`; when data/csv was missing, find
+             exited non-zero and pipefail aborted the script BEFORE the friendly
+             "No CSVs found under data/csv" die — hence the silent exit 1. Hardened with
+             `{ find ... || true; }` so a missing pack now yields the clear die message instead.
+           RECOVERY for an already-wiped VM (restores only data/csv, keeps your env.sh):
+             cd ~ && tar -xzf <your-tarball>.tar.gz -C ~ contoso-retail-rm-assist-rakesh/data/csv
+  v2.1.4 - REWRITE: ACS-Teams-Live-Video-Integration.md is now a no-npm, HTTPS-correct guide.
+           Motivation: a plain http://<vm-ip>:8080 origin is NOT a browser "secure context", so
+           getUserMedia (camera/mic) is blocked and the Teams call cannot send video; http://localhost
+           only works if the browser runs on the same box (an Azure VM has no webcam/desktop). The
+           guide no longer uses Node.js/npm/webpack/Express at all. Instead:
+           * The client is a SINGLE static index.html; the ACS Calling Web SDK is loaded straight from
+             a CDN as browser ESM (jsdelivr /+esm for @azure/communication-calling@1.43.1, which
+             resolves @azure/logger + @azure/communication-common automatically) inside a
+             <script type="module"> — nothing to install or build.
+           * It is hosted on an Azure Storage STATIC WEBSITE, which serves the page over real HTTPS
+             (https://<acct>.z<nn>.web.core.windows.net) — a secure context, so the camera works from
+             any webcam machine (your laptop). The static endpoint is anonymous and unaffected by the
+             account's "allow blob public access" flag, so it survives lock-down policies.
+           * The VoIP token is minted with `az communication identity token issue --scope voip` and
+             pasted into the page (two inputs: Teams meeting link + token) — so the deployed file holds
+             NO secrets and there is no token server.
+           * Provisioning (ACS + storage static website), upload, token, and teardown are all `az`;
+             every value is a variable at the top (RG/LOCATION/ACS_NAME/ACS_DATA_LOCATION/STORAGE_NAME).
+             Added an explicit HTTP-vs-HTTPS section, a "multiple guests in parallel" section, and
+             updated troubleshooting. No demo code changed; this is a doc-only release.
+  v2.1.3 - FIX: sharpened vague live-call tool answers in videoassist/nudge-engine.js, and added a
+           standalone ACS<->Teams integration guide.
+           * KYC answers are now operation-aware. "Can you do my KYC / re-KYC on this call, right now?"
+             is treated as an ACTION request (new classifier example -> kyc/request) and answers what
+             actually happens on the call — the video re-KYC (V-CIP) capture, live identity check,
+             maker-checker submission, and that completing it unblocks credit/limit/restructuring —
+             instead of only restating "KYC status is Due... next due date". The plain status answer
+             also now points to the on-call V-CIP remedy rather than dead-ending.
+           * repayments.summary ("Can you restructure my EMI?") now includes the card outstanding vs
+             limit at APR and states that restructuring / EMI conversion is assessed via an
+             affordability review (subject to eligibility + approval, not confirmed on the call),
+             instead of only listing delayed-EMI / return counts.
+           * NEW doc: ACS-Teams-Live-Video-Integration.md — a self-contained, demo-independent
+             walkthrough (with full runnable code: az provisioning, Node/Express token server, ACS
+             Calling Web SDK client that joins a Teams meeting with two-way video, and teardown). No
+             nudges / no demo data — purely the ACS->Teams live video interop for customer enablement.
+  v2.1.2 - FIX: `wipe.sh` (default, keep-the-RG per-phase teardown) could leave the PAYG chat
+           deployment (gpt-4.1-mini-payg) behind. Root cause: wipe.sh does not remember the
+           build's --type, so DEPLOY_TYPE defaults to 'ptu' on a bare `wipe.sh` and phase2/down.sh's
+           fast per-deployment delete targeted gpt-4.1-mini-ptu (absent) instead of the actual
+           gpt-4.1-mini-payg — leaving it (and its billing) to rely solely on the account-cascade.
+           phase2/down.sh now ENUMERATES and deletes EVERY model deployment on the account (chat
+           ptu AND payg, plus embedding) regardless of --type, before the account delete, so billing
+           stops immediately and nothing is orphaned. Names listed in AOAI_CHAT_PROTECTED_DEPLOYMENTS
+           (empty by default) are still skipped. Also removed a stale "KV secrets" line and the unused
+           _dep_delete_note helper from the phase2 teardown preview (Key Vault was removed in v2.1.0).
+  v2.1.1 - FIX: embedding deployment failed in South India with InvalidResourceProperties
+           "The specified SKU 'Standard' for model 'text-embedding-3-small 1' is not supported
+           in this region 'southindia'." In southindia text-embedding-3-small is offered ONLY as
+           GlobalStandard (verified via `az cognitiveservices model list -l southindia`), while the
+           plain 'Standard' SKU is not. Changed AOAI_EMBED_SKU_NAME default from 'Standard' ->
+           'GlobalStandard' in env.sh (GlobalStandard is also valid in the usual PTU regions, so it
+           is the portable default; still overridable per region). No other changes; the chat model
+           already used GlobalStandard/GlobalProvisionedManaged and was unaffected.
+  v2.1.0 - REMOVED Azure Key Vault from the stack entirely, making the build immune to
+           subscription Azure Policies that force Key Vault publicNetworkAccess=Disabled
+           (the "Public network access is disabled ... ForbiddenByConnection" failures that
+           blocked build_rg.sh and the runtime container apps):
+           * No vault is created and the deployer never touches a vault data plane. Every app
+             secret (Tool API bearer token, Foundry/Search/ACS endpoints + connection strings)
+             is now a LITERAL Container App secret — passed as @secure() Bicep params (phase4,
+             phase6) or `az containerapp secret set` (phase9) — and carried between phases via
+             each phase's outputs.env file (the existing transport).
+           * phase1 main.bicep/up.sh/down.sh: dropped the KV resource, its two role assignments
+             (Key Vault Administrator / Secrets User), the kvName param and kvId/kvUri outputs,
+             and the _del_kv teardown.
+           * phase2 main.bicep/up.sh/down.sh: removed the keyVaultName param, the existing-vault
+             reference, all 11 Microsoft.KeyVault/vaults/secrets resources and the _set_kv writes;
+             SEARCH_INDEX_NAME + the Foundry/Search/ACS wiring values are emitted to outputs.env.
+           * phase4: 10 new @secure() params feed literal secret values (bearer generated ONCE in
+             up.sh and persisted to outputs.env); phase5/6/9 read the bearer from phase4 outputs.env.
+           * setup_docker_cache.sh: the KV-backed ACR credential-set + cache rule is replaced by an
+             authenticated `az acr import` (inline Docker Hub creds) of the nginx base image.
+           * env.sh: removed NAME_KV, the heal_keyvault_public_access helper, the KV_PROBE_STRICT
+             knob, and all KV_URI handling in regen_phase1_outputs / assert_foundation_present.
+           * phase0 no longer registers Microsoft.KeyVault; wipe no longer purges a soft-deleted
+             vault. README gained a "Key Vault-free by design" section (replacing "Locked-down Key
+             Vault"); every value stays configurable in env.sh. No other resource shapes changed.
+  v2.0.2 - SPLIT the build into three scripts so RG-level, non-billable setup runs ONCE and
+           the teardown no longer deletes the resource group by default:
+           * build_rg.sh (NEW, run once) — BUILD_STAGE=foundation: creates the resource group
+             + Phase-1 platform (Log Analytics, ACR, UAMI, Container Apps env), then stops.
+             Non-billable (ACR Basic ~$5/mo is the only standing cost).
+           * build.sh (NEW, per demo) — BUILD_STAGE=apps: provisions the billable stack
+             (phases 2-9) assuming the foundation exists; keeps `--type=ptu|payg`. Asserts the
+             foundation is present and rehydrates phase1 outputs.env from Azure if missing, so
+             it runs even in a fresh shell / re-extracted tarball.
+           * wipe.sh — DEFAULT CHANGED to keep the RG: now runs the per-phase teardown with
+             WIPE_DELETE_RG=0 + KEEP_PLATFORM=1 (deletes the billable stack, KEEPS the RG +
+             platform). `wipe.sh --delete-rg` (or WIPE_DELETE_RG=1) restores the full
+             all-or-nothing RG delete + soft-delete purge.
+           * deploy.sh unchanged as the one-shot (BUILD_STAGE=all = build_rg + build combined);
+             final message + header updated for the new wipe default.
+           * NEW env.sh helpers: assert_foundation_present, regen_phase1_outputs.
+             New knob: BUILD_STAGE (all|foundation|apps).
+           * rebuild-parallel.sh staged into foundation vs apps portions by BUILD_STAGE.
+           * README documents the 3-script model. No resource shapes changed; every value stays
+             configurable in env.sh.
+  v2.0.1 - FIX: standalone Speech (SpeechServices kind) is not offered in South India — ARM
+           rejected phase2 with InvalidApiSetId "account type 'SpeechServices' is unavailable
+           in given region". The Speech account now has its own region, AZ_REGION_SPEECH
+           (default centralindia, overridable), passed to phase2 Bicep as `speechLocation`.
+           The in-call STT token path (Video Assist) now targets this dedicated Speech account
+           (AZURE_SPEECH_RESOURCE_ID + AZURE_SPEECH_REGION derive from it) instead of the
+           South-India AIServices account, and phase2 Bicep grants the app UAMI "Cognitive
+           Services User" on it. Soft-delete purge (wipe + phase2 down) now purges the Speech
+           account in AZ_REGION_SPEECH. No other behavior changed.
+  v2.0.0 - SELF-CONTAINED, ALL-OR-NOTHING build. Nothing pre-existing is reused; the stack
+           now CREATES its own resource group in South India and provisions EVERYTHING inside
+           it, and `wipe.sh` DELETES the whole resource group. Changes:
+           * New resource group (AZ_RG, default rg-contoso-rmx-rakesh) is CREATED by phase0 and
+             DELETED on wipe. Default region AZ_REGION=southindia; AI Search region overridable
+             via AZ_REGION_SEARCH (default centralindia for capacity headroom).
+           * phase2 now CREATES the Azure AI Foundry (AIServices) account + project via Bicep
+             (was: discover a pre-existing one), then CLI-creates BOTH the chat deployment and
+             the text-embedding-3-small embedding deployment on it (auto-discovers the latest
+             model version, overridable via env). ACS gets a system-assigned identity so the
+             transcription role grant works on a freshly-created ACS.
+           * `--type` now picks how the chat model is CREATED (both are created + deleted):
+               --type=ptu  (default) -> gpt-4.1-mini-ptu  (GlobalProvisionedManaged, 15 PTU)
+               --type=payg           -> gpt-4.1-mini-payg (GlobalStandard, pay-as-you-go)
+           * wipe.sh -> `az group delete` on the whole RG, then purges the soft-deleted
+             Cognitive Services accounts (AIServices + Speech) and Key Vault so the globally
+             unique names are immediately reusable. Safety: refuses to delete an RG that lacks
+             this project's tag unless WIPE_FORCE=1. Optional per-phase teardown that keeps the
+             empty RG shell via WIPE_DELETE_RG=0. Async delete via WIPE_RG_NOWAIT=1.
+           * Every value remains configurable in infra/common/env.sh — no hardcoded resource
+             IDs; all names derive from a deterministic suffix.
+  v1.0.5 - Faster deploy & wipe (all opt-in via env vars, safe fallback = old behavior).
+           DEPLOY: PREBUILD_IMAGES=1 (default) builds the three container images
+           (Tool API, Video Assist, CRM dashboard) CONCURRENTLY in the background right
+           after phase1, overlapping them with phase2's slow AI Search provisioning; phases
+           4/6/9 then reuse the ready images instead of building serially across later waves.
+           If a pre-build fails, that phase falls back to building inline. PHASE5_REBUILD_TOOLAPI=0
+           (default) skips phase5's redundant Tool API image rebuild — phase4's image already
+           contains rag.py/search.py and RAG is read at runtime, so no redeploy is needed
+           (set =1 to force it). WIPE: WIPE_PARALLEL_DELETES=1 (default) tears down independent
+           resources concurrently. Escape hatches: PREBUILD_IMAGES=0, PHASE5_REBUILD_TOOLAPI=1,
+           WIPE_PARALLEL_DELETES=0; existing KEEP_PLATFORM=1 still skips the slow phase1 teardown.
+  v1.0.4 - Added `--type=payg` deploy flag (PTU/PAYG profile switch in env.sh).
+  v1.0.3 - Live-call answer routing fixed; Tier-4 nudges + SOPs 17-20; outcome-first RM Assist.
+  v1.0.2 - removed stale NAME_CA_VOICE reference in phase0 (crashed under `set -u`).
+  v1.0.1 - normalized all scripts to LF line endings; added .gitattributes.
+  v1.0.0 - initial lean Rakesh-only package.
+journey: Everyday RM Assist — Rakesh Sharma (CTB-RTL-002), incl. live video call (Step 7)
+chat_model: default --type=ptu -> gpt-4.1-mini-ptu (GlobalProvisionedManaged, 15 PTU);
+            --type=payg -> gpt-4.1-mini-payg (GlobalStandard PAYG). BOTH are created inside the
+            new RG and deleted with it on wipe.
+creates: EVERYTHING in a NEW resource group (default rg-contoso-rmx-rakesh, southindia):
+         AI Foundry account + project, chat + embedding deployments, AI Search, ACS + Email,
+         Speech, Log Analytics, ACR, Key Vault, UAMI, Container Apps env + 3 apps.
+reuses: nothing — no pre-existing/ready resources.
+config: single source of truth in infra/common/env.sh (no hardcoded resource IDs)
+deploy: bash deploy.sh             (one-shot: creates a 15-PTU chat deployment)
+        bash deploy.sh --type=payg (one-shot: creates a PAYG chat deployment instead)
+        --- or the 3-script split (recommended for locked-down subscriptions) ---
+        bash build_rg.sh           (run once: RG + platform, non-billable, Key Vault fix)
+        bash build.sh [--type=payg](per demo: billable stack, phases 2-9)
+wipe:   bash wipe.sh               (default: deletes the billable stack, KEEPS the RG + platform)
+        bash wipe.sh --delete-rg   (full: deletes the whole RG + purges soft-deletes)
+

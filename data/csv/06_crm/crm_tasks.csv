@@ -1,0 +1,5 @@
+task_id,customer_id,rm_id,title,due_date,status,priority,created_by,approval_state
+TASK-B-001,CTB-RTL-002,RM-2207,Resolve card dispute SR-B-202602-001 (chargeback),2026-04-09,Open,High,RM,Approved
+TASK-B-002,CTB-RTL-002,RM-2207,Offer EMI restructuring / step-down,2026-04-10,Open,High,RM,Approved
+TASK-B-003,CTB-RTL-002,RM-2207,Compute EMI-conversion savings on card,2026-04-11,Open,Medium,RM,Approved
+TASK-B-004,CTB-RTL-002,RM-2207,Late-fee waiver review + retention call,2026-04-14,Open,High,RM,Approved

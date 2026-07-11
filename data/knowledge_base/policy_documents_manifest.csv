@@ -1,0 +1,21 @@
+doc_id,filename,title,doc_type,effective_date,source
+SOP-01,01_kyc_and_rekyc.md,KYC and Periodic Re-KYC for Retail Customers,Retail SOP,2025-04-01,Foundry gpt-4.1
+SOP-02,02_card_dispute_and_chargeback.md,Card Dispute and Chargeback Handling,Retail SOP,2025-04-01,Foundry gpt-4.1
+SOP-03,03_loan_eligibility_and_foir.md,Retail Loan Eligibility and FOIR,Retail SOP,2025-04-01,Foundry gpt-4.1
+SOP-04,04_unauthorised_transaction_and_fraud.md,Unauthorised Transaction and Fraud Protection,Retail SOP,2025-04-01,Foundry gpt-4.1
+SOP-05,05_collections_and_restructuring.md,Collections and Loan Restructuring,Retail SOP,2025-04-01,Foundry gpt-4.1
+SOP-06,06_insurance_and_protection.md,Insurance and Protection (Needs-based Cross-sell),Retail SOP,2025-04-01,Foundry gpt-4.1
+SOP-07,07_fair_practices_and_grievance.md,Fair Practices and Grievance Redressal,Retail SOP,2025-04-01,Foundry gpt-4.1
+SOP-08,08_consent_recording_and_dpdp.md,"Customer Consent, Call Recording and DPDP Compliance",Retail SOP,2025-04-01,Foundry gpt-4.1
+SOP-09,09_escalation_and_human_handoff.md,"Escalation, Human Handoff and Credit Decision Boundary",Retail SOP,2025-04-01,Foundry gpt-4.1
+SOP-10,10_source_of_funds_and_scam_victim_rescue.md,Source of Funds and Scam-Victim Rescue,Retail SOP,2026-05-01,Synthetic bank policy
+SOP-11,11_debt_stacking_and_responsible_lending.md,Debt Stacking and Responsible Lending,Retail SOP,2026-05-01,Synthetic bank policy
+SOP-12,12_debt_consolidation_and_financial_health.md,Controlled Debt Consolidation and Financial Health Assist,Retail SOP,2026-05-01,Synthetic bank policy
+SOP-13,13_microfinance_exposure_and_bureau_reconciliation.md,Microfinance Exposure and Bureau Reconciliation,Retail SOP,2026-05-01,Synthetic bank policy
+SOP-14,14_vulnerable_customer_and_credit_intermediary_conduct.md,Vulnerable Customer and Credit-Intermediary Conduct,Retail SOP,2026-05-01,Synthetic bank policy
+SOP-15,15_hni_urgent_payment_service_recovery.md,HNI Urgent Payment Service Recovery,Retail SOP,2026-07-01,Synthetic bank policy adapted from AM4827 generator
+SOP-16,16_live_call_recovery_and_case_consent.md,Live Call Recovery and Case Consent,Retail SOP,2026-07-01,Synthetic bank policy
+SOP-17,17_retention_and_rate_match_policy.md,Retention and Rate-Match Policy,Retail SOP,2026-07-01,Synthetic bank policy
+SOP-18,18_guarantor_family_liability_and_collections_boundaries.md,"Guarantor, Family Liability and Collections Boundaries",Retail SOP,2026-07-01,Synthetic bank policy
+SOP-19,19_on_call_offer_commitment_protocol.md,On-Call Offer Commitment Protocol,Retail SOP,2026-07-01,Synthetic bank policy
+SOP-20,20_hardship_restructuring_playbook.md,Hardship Restructuring Playbook,Retail SOP,2026-07-01,Synthetic bank policy

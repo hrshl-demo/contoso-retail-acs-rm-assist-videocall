@@ -1,0 +1,45 @@
+{
+  // One-click build/wipe/git tasks. In a Remote-SSH window these run ON the VM.
+  // Ctrl+Shift+B          -> default build (PTU)
+  // Terminal -> Run Task  -> pick any task below
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build: PTU (15-PTU chat model)",
+      "type": "shell",
+      "command": "bash build.sh --type=ptu",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": true }
+    },
+    {
+      "label": "Build: PAYG (pay-as-you-go chat model)",
+      "type": "shell",
+      "command": "bash build.sh --type=payg",
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": true }
+    },
+    {
+      "label": "Wipe: keep RG + platform (fast next build)",
+      "type": "shell",
+      "command": "bash wipe.sh",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": true }
+    },
+    {
+      "label": "Wipe: delete ENTIRE resource group",
+      "type": "shell",
+      "command": "bash wipe.sh --delete-rg",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": true }
+    },
+    {
+      "label": "Git: pull latest",
+      "type": "shell",
+      "command": "git pull --ff-only",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    }
+  ]
+}

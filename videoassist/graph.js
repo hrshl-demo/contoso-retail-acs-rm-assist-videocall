@@ -12,6 +12,11 @@
 //
 // When these are not set the caller falls back to a standing meeting link or a
 // synthetic demo link, so the demo still completes offline.
+//
+// NO EMAIL IS EVER SENT. The event is created on the RM's own calendar with NO
+// attendees, so Exchange never generates a meeting-invitation email. The RM simply
+// sees the meeting on their calendar; the customer joins via the in-app "Join call"
+// button (ACS <-> Teams interop) and is never emailed a link.
 
 const TENANT = process.env.GRAPH_TENANT_ID || process.env.AZURE_TENANT_ID || null;
 const CLIENT_ID = process.env.GRAPH_CLIENT_ID || null;
@@ -48,7 +53,7 @@ function graphDate(d) { return new Date(d).toISOString().replace(/\.\d+Z$/, '').
 
 // Create a calendar event on the RM's calendar with an online Teams meeting attached.
 // Returns { joinUrl, eventId, webLink }.
-export async function createRmCalendarMeeting({ subject, startIso, endIso, customerName, customerEmail, note } = {}) {
+export async function createRmCalendarMeeting({ subject, startIso, endIso, customerName, note } = {}) {
   const token = await getToken();
   const start = startIso ? new Date(startIso) : new Date();
   const end = endIso ? new Date(endIso) : new Date(start.getTime() + DURATION_MIN * 60000);
@@ -58,15 +63,16 @@ export async function createRmCalendarMeeting({ subject, startIso, endIso, custo
     end: { dateTime: graphDate(end), timeZone: 'UTC' },
     isOnlineMeeting: true,
     onlineMeetingProvider: 'teamsForBusiness',
+    // No attendees and no reminder popups: this is a silent RM-calendar hold, so
+    // Exchange sends ZERO email. The customer is added to the live call in-app, not
+    // via a calendar invite.
+    isReminderOn: false,
     body: {
       contentType: 'HTML',
       content: `Customer-initiated video banking call${customerName ? ' with <b>' + customerName + '</b>' : ''}.` +
         (note ? '<br>' + note : ''),
     },
   };
-  if (customerEmail) {
-    event.attendees = [{ emailAddress: { address: customerEmail, name: customerName || customerEmail }, type: 'required' }];
-  }
   const r = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(RM_USER_ID)}/events`, {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Prefer: `outlook.timezone="${TZ}"` },

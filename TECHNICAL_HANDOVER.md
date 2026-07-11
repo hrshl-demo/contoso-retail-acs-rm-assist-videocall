@@ -364,7 +364,7 @@ plain `Standard` is unavailable in southindia, v2.1.1 fix), `AOAI_EMBED_SKU_CAPA
 ### §5 Net-new resource names (all suffix `3f45a`)
 `NAME_LAW`, `NAME_ACR` (`acrrmx3f45a`), `NAME_UAMI`, `NAME_ACA_ENV`, `NAME_AISERVICES`
 (`aifndry-rmx-3f45a`), `NAME_FOUNDRY_PROJECT` (`proj-rmx-3f45a`), `NAME_SEARCH` (`srch-rmx-3f45a`),
-`NAME_ACS` (`acs-rmx-3f45a`), `NAME_ACS_EMAIL`, `NAME_ACS_VIDEO`, `NAME_SPEECH`,
+`NAME_ACS` (`acs-rmx-3f45a`), `NAME_ACS_VIDEO`, `NAME_SPEECH`,
 `NAME_CA_TOOLAPI` (`ca-rmx-toolapi`), `NAME_CA_CRM` (`ca-rmx-dashboard`),
 `NAME_CA_VIDEOASSIST` (`videoassist-web`), `SEARCH_INDEX_NAME` (`contoso-retail-policy-index`).
 `EXISTING_*` remain as back‑compat aliases pointing at the created names.
@@ -374,7 +374,7 @@ plain `Standard` is unavailable in southindia, v2.1.1 fix), `AOAI_EMBED_SKU_CAPA
 `AZURE_AI_CHAT_DEPLOYMENT`, `AZURE_AI_EMBED_DEPLOYMENT`, `AZURE_AI_SCOPE`,
 `AZURE_SPEECH_REGION` = `AZ_REGION_SPEECH`, `AZURE_SPEECH_RESOURCE_ID` (the dedicated Speech account),
 `VOICELIVE_MODEL` (`gpt-4.1`, a managed identifier — no deployment, no cost),
-`ACS_DATA_LOCATION`/`EMAIL_DATA_LOCATION` (`India`), voice‑AI deployment overrides, and live‑nudge
+`ACS_DATA_LOCATION` (`India`), voice‑AI deployment overrides, and live‑nudge
 timing knobs (`FAST_NUDGE_TIMEOUT_MS` 3400, `FAST_PATH_HEADSTART_MS` 300, `NUDGE_FRESHNESS_MS` 5500,
 `NUDGE_TEAMS_TIMEOUT_MS` 5000, `NUDGE_MIN_CONFIDENCE` 0.68).
 

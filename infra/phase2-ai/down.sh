@@ -47,7 +47,6 @@ $(printf '\033[1;33m================ The following WILL be deleted =============
   Speech account:               $NAME_SPEECH
   AI Search:                    $NAME_SEARCH
   ACS:                          $NAME_ACS $([ "${ACS_FORCE_DELETE:-1}" == "1" ] && echo "(deleted)" || echo "(PRESERVED)")
-  Email Comm Services:          $NAME_ACS_EMAIL  (+ AzureManagedDomain)
 
 $(printf '\033[1;32mNothing is pre-existing or shared — this build created it all.\033[0m')
 $(printf '\033[1;33m===============================================================\033[0m')
@@ -83,15 +82,16 @@ else
   done <<< "$_DEPLOYMENTS"
 fi
 
-# ---------- ACS + Email and AI Search — independent deletes (parallelizable) ----------
+# ---------- ACS and AI Search — independent deletes (parallelizable) ----------
 # HOTFIX v0.14.4 context: ACS may hold a purchased PSTN number. In THIS isolated stack
 # ACS is created fresh with NO purchased number, so wipe deletes it by default
-# (ACS_FORCE_DELETE=1). Set ACS_FORCE_DELETE=0 to preserve ACS + Email across a wipe.
-_del_acs_email() {
+# (ACS_FORCE_DELETE=1). Set ACS_FORCE_DELETE=0 to preserve ACS across a wipe.
+# No Email Communication Service is provisioned any more (the demo sends no email).
+_del_acs() {
   if [[ "${ACS_FORCE_DELETE:-0}" == "1" ]]; then
     warn "ACS_FORCE_DELETE=1 — deleting ACS AND releasing any purchased number."
     log "Deleting ACS: $NAME_ACS"
-    local acs_id email_id
+    local acs_id
     acs_id="$(az communication list -g "$AZ_RG" --query "[?name=='${NAME_ACS}'].id | [0]" -o tsv 2>/dev/null || true)"
     if [[ -n "$acs_id" ]]; then
       assert_project_tag "$acs_id"
@@ -101,20 +101,8 @@ _del_acs_email() {
     else
       warn "ACS not found (skipping): $NAME_ACS"
     fi
-    log "Deleting Email Comm Services: $NAME_ACS_EMAIL"
-    email_id="$(az resource show \
-      --resource-type Microsoft.Communication/emailServices \
-      --name "$NAME_ACS_EMAIL" \
-      -g "$AZ_RG" \
-      --query id -o tsv 2>/dev/null || true)"
-    if [[ -n "$email_id" ]]; then
-      assert_project_tag "$email_id"
-      az resource delete --ids "$email_id" --only-show-errors && ok "Deleted Email Comm Services" || warn "Email delete failed: $NAME_ACS_EMAIL"
-    else
-      warn "Email Comm Services not found (skipping): $NAME_ACS_EMAIL"
-    fi
   else
-    ok "PRESERVING ACS ($NAME_ACS) and its phone number. Email Comm Services kept too (ACS linkedDomains dependency). Set ACS_FORCE_DELETE=1 to override."
+    ok "PRESERVING ACS ($NAME_ACS) and its phone number. Set ACS_FORCE_DELETE=1 to override."
   fi
 }
 _del_search() {
@@ -130,13 +118,13 @@ _del_search() {
 }
 
 if [[ "${WIPE_PARALLEL_DELETES:-1}" == "1" ]]; then
-  log "Deleting ACS/Email and AI Search IN PARALLEL (WIPE_PARALLEL_DELETES=1)..."
-  _del_acs_email & PID_ACS=$!
-  _del_search    & PID_SEARCH=$!
-  wait "$PID_ACS"    || warn "ACS/Email teardown reported issues."
+  log "Deleting ACS and AI Search IN PARALLEL (WIPE_PARALLEL_DELETES=1)..."
+  _del_acs    & PID_ACS=$!
+  _del_search & PID_SEARCH=$!
+  wait "$PID_ACS"    || warn "ACS teardown reported issues."
   wait "$PID_SEARCH" || warn "AI Search teardown reported issues."
 else
-  _del_acs_email
+  _del_acs
   _del_search
 fi
 

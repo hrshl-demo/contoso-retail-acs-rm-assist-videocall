@@ -7,14 +7,12 @@
 //   - Azure AI Foundry PROJECT (child of the account)
 //   - Azure AI Search (Basic, Entra-only auth, public network)
 //   - Azure Communication Services (ACS)
-//   - Email Communication Services + Azure-managed sender domain
-//   - Domain ↔ ACS linkage
 //   - Speech (Cognitive Services) account for the ACS media-streaming fallback
 //   - Role assignments:
 //       * UAMI -> NEW AIServices account: Cognitive Services User + Cognitive Services OpenAI User
 //       * UAMI -> NEW Foundry project:    Azure AI User
 //       * UAMI -> NEW Search:  Search Index Data Contributor + Search Service Contributor
-//       * UAMI -> NEW ACS:     Contributor (sufficient for ACS Email Send via SDK)
+//       * UAMI -> NEW ACS:     Contributor (ACS management for token/identity operations)
 //       * Deployer (you) -> NEW AIServices: Cognitive Services OpenAI User + Azure AI User
 //                          (so you can create model deployments + run the indexer locally)
 //       * Deployer (you) -> NEW Search: Index Data Contributor + Service Contributor
@@ -68,18 +66,16 @@ param embedDeploymentName string
 @description('Principal ID of the UAMI created in Phase 1.')
 param uamiPrincipalId string
 
-// ----- Email -----
-@description('Data location for Email Communication Services.')
+// ----- ACS data residency -----
+@description('Data location (residency) for Azure Communication Services.')
 @allowed([ 'Africa', 'Asia Pacific', 'Australia', 'Brazil', 'Canada', 'Europe', 'France', 'Germany', 'India', 'Japan', 'Korea', 'Norway', 'Switzerland', 'UAE', 'UK', 'United States' ])
-param emailDataLocation string = 'India'
+param acsDataLocation string = 'India'
 
 // ====================== Names (defaults from suffix; overridable from infra/common/env.sh) ======================
 @description('AI Search service name (globally unique).')
 param searchName string = 'srch-rmx-${suffix}'
 @description('Communication Services (ACS) name.')
 param acsName    string = 'acs-rmx-${suffix}'
-@description('Email Communication Services name.')
-param emailName  string = 'acsemail-rmx-${suffix}'
 @description('Speech (Cognitive Services) account for the ACS media-streaming fallback.')
 param speechName string = 'spch-rmx-${suffix}'
 
@@ -177,30 +173,9 @@ resource speech 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   }
 }
 
-// ====================== NEW: ACS + Email ======================
-// IMPORTANT: ACS and the email domain have a chicken-and-egg dependency.
-// We solve it by deploying the email domain first, then ACS with linkedDomains pointing to it.
-
-resource emailService 'Microsoft.Communication/emailServices@2023-04-01' = {
-  name: emailName
-  location: 'global'
-  tags: commonTags
-  properties: {
-    dataLocation: emailDataLocation
-  }
-}
-
-// Azure-managed domain (no DNS setup)
-resource emailDomain 'Microsoft.Communication/emailServices/domains@2023-04-01' = {
-  parent: emailService
-  name: 'AzureManagedDomain'
-  location: 'global'
-  tags: commonTags
-  properties: {
-    domainManagement: 'AzureManaged'
-    userEngagementTracking: 'Disabled'
-  }
-}
+// ====================== NEW: ACS ======================
+// This demo sends NO email, so no Email Communication Service / sender domain is
+// provisioned. ACS is created stand-alone (video/voice tokens + interop only).
 
 resource acs 'Microsoft.Communication/communicationServices@2023-04-01' = {
   name: acsName
@@ -210,10 +185,7 @@ resource acs 'Microsoft.Communication/communicationServices@2023-04-01' = {
     type: 'SystemAssigned'                  // needed so grant-acs-cognitive-role.sh can grant
   }                                          // this ACS's identity Cognitive Services User (transcription)
   properties: {
-    dataLocation: emailDataLocation
-    linkedDomains: [
-      emailDomain.id
-    ]
+    dataLocation: acsDataLocation
   }
 }
 
@@ -307,7 +279,7 @@ resource ra_uami_searchsvc 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   }
 }
 
-// UAMI -> NEW ACS: Contributor (sufficient for SDK-based email send)
+// UAMI -> NEW ACS: Contributor (ACS management for token/identity operations)
 resource ra_uami_acs 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(acs.id, uamiPrincipalId, roleIds.contributor)
   scope: acs
@@ -354,5 +326,3 @@ output speechName                 string = speech.name
 output speechEndpoint             string = 'https://${speechName}.cognitiveservices.azure.com/'
 output speechRegion               string = speechLocation
 output acsEndpoint                string = 'https://${acsName}.communication.azure.com/'
-output emailDomainResource        string = emailDomain.id
-output azureManagedSenderDomain   string = emailDomain.properties.fromSenderDomain

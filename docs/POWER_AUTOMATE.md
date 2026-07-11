@@ -1,4 +1,12 @@
-# Power Automate / Power Platform: Teams nudges & email
+# Power Automate / Power Platform: Teams nudges & scheduling
+
+> **This demo sends NO email.** The meeting is a *direct meeting request*: the
+> RM-side Teams meeting is created straight on the RM's calendar via Microsoft
+> Graph (or an optional RM-owned scheduling flow) and the customer joins in-app.
+> There is **no email confirmation and no Email Communication Service**. If you
+> previously built a Power Automate "email automation" flow (e.g. *HNI RM Assist
+> Email Automation*), **turn it off / delete it** — it is not part of this repo and
+> premium Power Automate email connectors are chargeable.
 
 The demo's Azure stack is fully self-contained, but **two integrations live in
 Power Platform** because they cannot be created with Azure IaC:
@@ -6,12 +14,13 @@ Power Platform** because they cannot be created with Azure IaC:
 1. **Teams nudges** — the live call posts an AI **synopsis**, **nudges** and a
    **"video call requested" card** into the RM's Teams. This goes through a
    Power Automate flow exposed as a signed webhook (`TEAMS_WEBHOOK_URL`).
-2. **Scheduling / email** — an optional RM-owned flow that, on a booking, creates
-   an Outlook calendar event and/or sends a confirmation email, returning the
-   real Teams `joinUrl` (`SCHEDULE_WEBHOOK_URL`).
+2. **Scheduling (optional)** — an optional RM-owned flow that, on a booking,
+   creates an Outlook calendar event and returns the real Teams `joinUrl`
+   (`SCHEDULE_WEBHOOK_URL`). This flow must **not** send any email. If it is left
+   unset, the app creates the meeting directly via Microsoft Graph instead.
 
 Neither is required for the video call to work — set them when you want Teams
-posting and/or a real emailed calendar invite.
+posting and/or a real calendar invite. **Do not wire any email step into either.**
 
 ---
 
@@ -86,12 +95,13 @@ The app reads `joinUrl` (also accepts `joinLink`/`meetingUrl`) and uses it as th
 RM's link; the customer joins the **same** meeting via ACS interop and never sees
 the URL.
 
-### Email options
-- **ACS Email** is provisioned by the stack (`Microsoft.Communication/emailServices`,
-  `NAME_ACS_EMAIL`) for programmatic, branded email from your own domain — use it
-  when you want emails sent by the backend rather than by a flow.
-- **Office 365 Outlook "Send an email"** inside the flow is the quickest path for a
-  demo and needs no domain setup.
+### Email
+
+**Intentionally none.** This demo never sends email — not from the backend and
+not from a flow. The customer is added to the RM's live Teams meeting in-app via
+ACS interop, and the RM sees the meeting on their own calendar (created silently
+with no attendees, so Exchange raises no invitation email). Do **not** add an
+"Send an email" / ACS Email step anywhere in the flow.
 
 ---
 

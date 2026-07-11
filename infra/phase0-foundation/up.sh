@@ -79,7 +79,6 @@ Phase 1 (platform):
 Phase 2 (AI services — ALL CREATED here, deleted with the RG on wipe):
   AI Search:                  $NAME_SEARCH  (region: $AZ_REGION_SEARCH)
   Comm Services:              $NAME_ACS
-  Email Comm Service:         $NAME_ACS_EMAIL
   Speech (in-call STT):       $NAME_SPEECH  (region: $AZ_REGION_SPEECH)
   AIServices (AI Foundry):    $NAME_AISERVICES
   Foundry project:            $NAME_FOUNDRY_PROJECT

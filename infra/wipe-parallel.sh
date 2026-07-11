@@ -10,7 +10,7 @@
 #     1. Remove the stray Entra app registration setup-graph.sh created (WIPE_GRAPH_APP=1).
 #     2. Safety-check the RG carries our project tag (skip with WIPE_FORCE=1).
 #     3. az group delete  -> removes Foundry acct+project, BOTH model deployments,
-#        AI Search, ACS + Email, Speech, Container Apps, ACR, UAMI, LAW — everything.
+#        AI Search, ACS, Speech, Container Apps, ACR, UAMI, LAW — everything.
 #     4. Purge soft-deleted Cognitive Services accounts ($NAME_AISERVICES, $NAME_SPEECH)
 #        so the names are immediately reusable.
 #     5. Clear stale local state — secrets.env / phase*/outputs.env (WIPE_LOCAL_STATE=1).
@@ -99,7 +99,7 @@ Deletes the billable stack this demo created:
   • AI Foundry account + project      $NAME_AISERVICES / $NAME_FOUNDRY_PROJECT
   • Chat deployment                   $AOAI_CHAT_DEPLOYMENT_NAME ($AOAI_CHAT_SKU_NAME)
   • Embedding deployment              $AOAI_EMBED_DEPLOYMENT_NAME ($AOAI_EMBED_SKU_NAME)
-  • AI Search / ACS+Email / Speech    $NAME_SEARCH / $NAME_ACS / $NAME_SPEECH
+  • AI Search / ACS / Speech          $NAME_SEARCH / $NAME_ACS / $NAME_SPEECH
 $([ "$WIPE_DELETE_RG" == "1" ] && echo "  • Container Apps / ACR / UAMI / Log Analytics (Phase 1 platform)" || { [ "${KEEP_PLATFORM:-0}" == "1" ] && echo "  • Container Apps (KEEPS ACR / UAMI / Log Analytics — run once by build_rg.sh)" || echo "  • Container Apps / ACR / UAMI / Log Analytics (Phase 1 platform)"; })
 $([ "$WIPE_DELETE_RG" == "1" ] && [ "$WIPE_PURGE_SOFT_DELETED" == "1" ] && echo "Then purges soft-deleted $NAME_AISERVICES and $NAME_SPEECH so names free up.")
 $([ "${WIPE_GRAPH_APP:-1}" == "1" ] && echo "Also removes the stray Entra app registration '${GRAPH_APP_NAME:-contoso-videoassist-rm-calendar}' (setup-graph.sh).")

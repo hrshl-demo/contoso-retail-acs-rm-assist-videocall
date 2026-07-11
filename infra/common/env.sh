@@ -176,8 +176,7 @@ export NAME_UAMI="id-rmx-app"                    # user-assigned managed identit
 export NAME_ACA_ENV="cae-rmx"                    # Container Apps environment
 
 export NAME_SEARCH="srch-rmx-${SUFFIX}"          # AI Search: 2-60, lowercase+digits+hyphens
-export NAME_ACS="acs-rmx-${SUFFIX}"              # ACS (email + telemetry); no purchased PSTN number
-export NAME_ACS_EMAIL="acsemail-rmx-${SUFFIX}"   # Email Communication Services
+export NAME_ACS="acs-rmx-${SUFFIX}"              # ACS (video/voice tokens + telemetry); no purchased PSTN number
 export NAME_SPEECH="spch-rmx-${SUFFIX}"          # Speech (ACS media-streaming fallback)
 
 export NAME_CA_TOOLAPI="ca-rmx-toolapi"          # FastAPI Tool API (phase4)
@@ -205,10 +204,6 @@ export AZURE_AI_SCOPE="https://ai.azure.com/.default"
 export AZURE_SPEECH_REGION="${AZURE_SPEECH_REGION:-$AZ_REGION_SPEECH}"
 export AZURE_SPEECH_RESOURCE_ID="${AZURE_SPEECH_RESOURCE_ID:-/subscriptions/${AZ_SUBSCRIPTION_ID}/resourceGroups/${AZ_RG}/providers/Microsoft.CognitiveServices/accounts/${NAME_SPEECH}}"
 export ACS_DATA_LOCATION="${ACS_DATA_LOCATION:-India}"
-# Email Communication Services data-residency location (passed to phase2 Bicep as
-# emailDataLocation). Valid values include: India, United States, Europe, Asia Pacific,
-# Australia, UK, etc. Keep this consistent with the RG region for data-residency demos.
-export EMAIL_DATA_LOCATION="${EMAIL_DATA_LOCATION:-${ACS_DATA_LOCATION:-India}}"
 # In-call synopsis/nudge model (defaults to the 15-PTU chat deployment).
 export VOICE_AI_CHAT_DEPLOYMENT="${VOICE_AI_CHAT_DEPLOYMENT:-$AOAI_CHAT_DEPLOYMENT_NAME}"
 export VOICE_AI_FAST_DEPLOYMENT="${VOICE_AI_FAST_DEPLOYMENT:-$VOICE_AI_CHAT_DEPLOYMENT}"

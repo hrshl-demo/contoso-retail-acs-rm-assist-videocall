@@ -231,11 +231,10 @@ _submit_phase2_deployment() {
         chatDeploymentName="$AOAI_CHAT_DEPLOYMENT_NAME" \
         embedDeploymentName="$AOAI_EMBED_DEPLOYMENT_NAME" \
         voiceLiveModel="$VOICELIVE_MODEL" \
-        emailDataLocation="$EMAIL_DATA_LOCATION" \
+        acsDataLocation="$ACS_DATA_LOCATION" \
         uamiPrincipalId="$UAMI_PRINCIPAL_ID" \
         searchName="$NAME_SEARCH" \
         acsName="$NAME_ACS" \
-        emailName="$NAME_ACS_EMAIL" \
         speechName="$NAME_SPEECH" \
     --no-wait \
     --only-show-errors \
@@ -358,7 +357,6 @@ OUTPUTS_JSON="$(az deployment group show \
 
 SEARCH_ENDPOINT="$(echo "$OUTPUTS_JSON" | jq -r '.searchEndpoint.value')"
 ACS_ENDPOINT="$(echo "$OUTPUTS_JSON"    | jq -r '.acsEndpoint.value')"
-SENDER_DOMAIN="$(echo "$OUTPUTS_JSON"   | jq -r '.azureManagedSenderDomain.value')"
 
 OUTFILE="$SCRIPT_DIR/outputs.env"
 cat > "$OUTFILE" <<EOF
@@ -366,7 +364,6 @@ cat > "$OUTFILE" <<EOF
 export SEARCH_ENDPOINT="$SEARCH_ENDPOINT"
 export SEARCH_INDEX_NAME="${SEARCH_INDEX_NAME:-contoso-retail-policy-index}"
 export ACS_ENDPOINT="$ACS_ENDPOINT"
-export ACS_SENDER="DoNotReply@${SENDER_DOMAIN}"
 export FOUNDRY_ENDPOINT="https://${NAME_AISERVICES}.services.ai.azure.com/"
 export FOUNDRY_AOAI_ENDPOINT="https://${NAME_AISERVICES}.services.ai.azure.com/openai/v1"
 export FOUNDRY_PROJECT_ENDPOINT="https://${NAME_AISERVICES}.services.ai.azure.com/api/projects/${NAME_FOUNDRY_PROJECT}"
@@ -390,7 +387,6 @@ CREATED (all deleted with the RG on wipe):
     via WSS:                    wss://${NAME_AISERVICES}.services.ai.azure.com/voice-live/realtime?api-version=2025-10-01&model=${VOICELIVE_MODEL}
   AI Search endpoint:           $SEARCH_ENDPOINT
   ACS endpoint:                 $ACS_ENDPOINT
-  Email sender:                 DoNotReply@${SENDER_DOMAIN}
 
 Role assignments granted (this phase):
   UAMI       -> AIServices  (Cognitive Services User + OpenAI User)

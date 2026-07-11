@@ -327,7 +327,6 @@ only the SKU/name/capacity differ. The embedding deployment is always created to
 | `NAME_ACA_ENV` | `cae-rmx` |
 | `NAME_SEARCH` | `srch-rmx-${SUFFIX}` |
 | `NAME_ACS` | `acs-rmx-${SUFFIX}` |
-| `NAME_ACS_EMAIL` | `acsemail-rmx-${SUFFIX}` |
 | `NAME_SPEECH` | `spch-rmx-${SUFFIX}` |
 | `NAME_CA_TOOLAPI` | `ca-rmx-toolapi` |
 | `NAME_CA_CRM` | `ca-rmx-dashboard` |
@@ -344,8 +343,7 @@ only the SKU/name/capacity differ. The embedding deployment is always created to
 | `AZURE_AI_SCOPE` | `https://ai.azure.com/.default` |
 | `AZURE_SPEECH_REGION` | `= AZ_REGION_SPEECH` |
 | `AZURE_SPEECH_RESOURCE_ID` | `= /subscriptions/…/accounts/${NAME_SPEECH}` (the created Speech account) |
-| `ACS_DATA_LOCATION` | `India` |
-| `EMAIL_DATA_LOCATION` | `= ACS_DATA_LOCATION` (`India`) — passed to phase2 Bicep as `emailDataLocation` |
+| `ACS_DATA_LOCATION` | `India` — passed to phase2 Bicep as `acsDataLocation` |
 | `VOICE_AI_CHAT_DEPLOYMENT` | `= AOAI_CHAT_DEPLOYMENT_NAME` |
 | `VOICE_AI_FAST_DEPLOYMENT` | `= VOICE_AI_CHAT_DEPLOYMENT` |
 | `VOICE_AI_WARMUP` | `1` |

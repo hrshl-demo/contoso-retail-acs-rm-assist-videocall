@@ -1,7 +1,23 @@
 contoso-retail-rm-assist-rakesh
-version: v2.4.0
+version: v2.5.0
 build_date: 2026-07-11
 changelog:
+  v2.5.0 - NO EMAIL: the demo now sends zero email — only a direct meeting request.
+           * videoassist/graph.js: createRmCalendarMeeting() no longer accepts/attaches
+             a customer attendee and sets isReminderOn:false, so the RM-side Teams meeting
+             is a SILENT calendar hold and Exchange raises NO meeting-invitation email.
+             The customer still joins in-app via the "Join call" button (ACS<->Teams interop).
+           * INFRA: removed the unused Email Communication Services (Microsoft.Communication/
+             emailServices + AzureManagedDomain) and the ACS linkedDomains link from phase2
+             Bicep. ACS is now stand-alone (video/voice tokens only). This also trims two
+             resources from every build, so phase2 provisions faster.
+             - Dropped params emailName/emailDataLocation (renamed data-residency param to
+               acsDataLocation), outputs emailDomainResource/azureManagedSenderDomain, and the
+               dead ACS_SENDER/outputs.env line. env.sh drops NAME_ACS_EMAIL/EMAIL_DATA_LOCATION.
+             - wipe/down scripts no longer look for an Email resource (_del_acs_email -> _del_acs).
+           * DOCS: POWER_AUTOMATE.md states the demo sends no email and warns to disable any
+             external "email automation" Power Automate flow (chargeable premium connector).
+           No change to the video call, nudges, scheduling, or deploy/wipe entrypoints.
   v2.4.0 - GITHUB-READY: published as a GitHub project with CI/CD and operator docs.
            * GitHub Actions (.github/workflows/): ci.yml (free lint/validate on push),
              deploy.yml (manual, Azure OIDC -> build.sh, ptu/payg), wipe.yml (manual,

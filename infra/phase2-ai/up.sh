@@ -29,14 +29,9 @@ source "$PHASE1_OUT"
 ok "Loaded Phase 1 outputs (UAMI: $UAMI_PRINCIPAL_ID)"
 
 # ---------- Cost confirmation (BEFORE any billable resource is created) ----------
-if [[ "$DEPLOY_TYPE" == "payg" ]]; then
-  CHAT_COST_LINE="  - $AOAI_CHAT_MODEL_NAME chat deployment ($AOAI_CHAT_SKU_NAME, pay-as-you-go)
-      CREATED on the NEW Foundry account; billed per token used; deleted with the RG on wipe."
-else
-  CHAT_COST_LINE="  - ${AOAI_CHAT_SKU_CAPACITY}-PTU $AOAI_CHAT_MODEL_NAME ($AOAI_CHAT_SKU_NAME) chat deployment
-      BILLED HOURLY (Provisioned Throughput reserves capacity) — the largest cost here.
-      CREATED on the NEW Foundry account; deleted with the RG on wipe."
-fi
+CHAT_COST_LINE="  - $AOAI_CHAT_MODEL_NAME chat deployment ($AOAI_CHAT_SKU_NAME, pay-as-you-go, capacity $AOAI_CHAT_SKU_CAPACITY)
+      The LARGE generation model. CREATED on the NEW Foundry account (region $AZ_REGION_AOAI);
+      billed per token used; used to generate + enrich the dataset and SOPs; deleted with the RG on wipe."
 cat <<EOF
 
 $(printf '\033[1;33m================ Phase 2 — Cost notice ================\033[0m')
@@ -222,6 +217,7 @@ _submit_phase2_deployment() {
         location="$AZ_REGION" \
         searchLocation="$AZ_REGION_SEARCH" \
         speechLocation="$AZ_REGION_SPEECH" \
+        aiServicesLocation="$AZ_REGION_AOAI" \
         suffix="$SUFFIX" \
         deployerObjectId="$DEPLOYER_OBJECT_ID" \
         deployerPrincipalType="$DEPLOYER_PRINCIPAL_TYPE" \
@@ -303,9 +299,35 @@ fi
 
 ok "Bicep deployment succeeded."
 
+# ---------- Capability preflight: gpt-5.4 GlobalStandard must be deployable here ----------
+# Fail fast with actionable guidance if the large chat model / SKU is not offered on this
+# account's region ($AZ_REGION_AOAI). Runs after the account exists (list-models is per-account).
+_assert_chat_model_available() {
+  local model="$AOAI_CHAT_MODEL_NAME" sku="$AOAI_CHAT_SKU_NAME"
+  log "Preflight: checking '$model' ($sku) is deployable on $NAME_AISERVICES ($AZ_REGION_AOAI) ..."
+  local models_json
+  models_json="$(az cognitiveservices account list-models --name "$NAME_AISERVICES" -g "$AZ_RG" -o json 2>/dev/null || echo '[]')"
+  if ! echo "$models_json" | jq -e --arg m "$model" 'any(.[]; .name==$m)' >/dev/null 2>&1; then
+    warn "Model '$model' is NOT offered on $NAME_AISERVICES in $AZ_REGION_AOAI."
+    warn "Available chat-capable models here:"
+    echo "$models_json" | jq -r '[.[].name] | unique | .[]' 2>/dev/null | sed 's/^/    /' >&2 || true
+    die "Set AZ_REGION_AOAI to a region that offers '$model' (e.g. eastus2), or override AOAI_CHAT_MODEL_NAME/AOAI_CHAT_MODEL_VERSION in infra/common/env.sh."
+  fi
+  # Verify the requested SKU is offered for this model (skus live at the top level of each model entry).
+  if ! echo "$models_json" | jq -e --arg m "$model" --arg s "$sku" \
+       'any(.[]; .name==$m and (((.skus // .model.skus) // []) | any(.name==$s)))' >/dev/null 2>&1; then
+    warn "Model '$model' is offered but SKU '$sku' is not listed for it in $AZ_REGION_AOAI."
+    warn "SKUs offered for '$model':"
+    echo "$models_json" | jq -r --arg m "$model" '.[] | select(.name==$m) | ((.skus // .model.skus) // [])[].name' 2>/dev/null | sort -u | sed 's/^/    /' >&2 || true
+    die "Override AOAI_CHAT_SKU_NAME in infra/common/env.sh, or choose an AZ_REGION_AOAI where '$model' offers '$sku'."
+  fi
+  ok "Preflight OK: '$model' ($sku) is deployable in $AZ_REGION_AOAI."
+}
+_assert_chat_model_available
+
 # ---------- Create model deployments on the freshly-created AIServices account ----------
 # The account/project were just created by the Bicep above; model deployments must be
-# created AFTER the account exists. Both the chat model (PTU or PAYG per DEPLOY_TYPE)
+# created AFTER the account exists. Both the chat model (gpt-5.4 GlobalStandard)
 # and the embedding model are CREATED here and DELETED with the RG on wipe.
 # Idempotent: an existing deployment of the same name is reused.
 _ensure_deployment() {  # role, deployment_name, model_name, model_format, model_version_override, sku_name, sku_capacity
@@ -318,12 +340,12 @@ _ensure_deployment() {  # role, deployment_name, model_name, model_format, model
     return 0
   fi
   if [[ -z "$ver" ]]; then
-    log "Discovering latest available version of model '$model' in $AZ_REGION ..."
+    log "Discovering latest available version of model '$model' in $AZ_REGION_AOAI ..."
     ver="$(az cognitiveservices account list-models \
       --name "$NAME_AISERVICES" -g "$AZ_RG" \
       --query "sort_by([?name=='${model}'], &version)[-1].version" -o tsv 2>/dev/null || true)"
   fi
-  [[ -n "$ver" ]] || die "Could not resolve a version for model '$model' in $AZ_REGION. Set the version override in infra/common/env.sh, or pick a region that offers $model."
+  [[ -n "$ver" ]] || die "Could not resolve a version for model '$model' in $AZ_REGION_AOAI. Set the version override in infra/common/env.sh, or set AZ_REGION_AOAI to a region that offers $model."
   log "Creating $role deployment $dep (model $model v$ver, $sku capacity $cap) ..."
   az cognitiveservices account deployment create \
     --name "$NAME_AISERVICES" -g "$AZ_RG" \
@@ -334,7 +356,7 @@ _ensure_deployment() {  # role, deployment_name, model_name, model_format, model
     --sku-name "$sku" \
     --sku-capacity "$cap" \
     -o none \
-    || die "Failed to create $role deployment '$dep' ($sku). Check $sku quota in $AZ_REGION (az cognitiveservices usage list -l $AZ_REGION)."
+    || die "Failed to create $role deployment '$dep' ($sku). Check $sku quota in $AZ_REGION_AOAI (az cognitiveservices usage list -l $AZ_REGION_AOAI)."
   ok "Created $role deployment: $dep"
 }
 

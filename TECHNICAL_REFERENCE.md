@@ -134,10 +134,11 @@ contoso-retail-rm-assist-rakesh/
 ├── TECHNICAL_REFERENCE.md          # ← this document
 ├── ACS-Teams-Live-Video-Integration.md  # deep note on the ACS↔Teams interop design
 ├── LICENSE                         # MIT
-├── build.sh                        # billable stack build (phases 2–9), --type=ptu|payg
+├── build_persistent.sh             # ONE-TIME persistent RG + static IP (anchors reusable cert)
+├── build.sh                        # billable stack build (phases 2–10 + VM data-gen), --regenerate-data
 ├── build_rg.sh                     # one-time non-billable foundation (RG + phases 0–1)
-├── deploy.sh                       # one-shot greenfield build (RG + phases 0–9)
-├── wipe.sh                         # teardown; default keeps RG+platform, --delete-rg = full
+├── deploy.sh                       # one-shot greenfield build (RG + phases 0–10)
+├── wipe.sh                         # teardown; default keeps RG+platform, --delete-rg = full purge
 ├── setup-graph.sh                  # creates Entra app + Graph Calendars.ReadWrite + consent
 │
 ├── backend/                        # Tool API — the grounded brain (Python FastAPI)
@@ -449,12 +450,13 @@ Cross-region calls are within Azure's India backbone (no egress charge); managed
 
 `AZ_RG=rg-contoso-rmx-rakesh`; ACR `acrrmx${SUFFIX}`; UAMI `id-rmx-app`; Container Apps env `cae-rmx`; Search `srch-rmx-${SUFFIX}`; ACS `acs-rmx-${SUFFIX}` / video `acs-rmx-video-${SUFFIX}`; Speech `spch-rmx-${SUFFIX}`; Foundry `aifndry-rmx-${SUFFIX}` / project `proj-rmx-${SUFFIX}`; Tool API app `ca-rmx-toolapi`; CRM app `ca-rmx-dashboard`; Video Assist app `videoassist-web`. Everything is tagged `project=contoso-retail-rm-assist-rakesh`.
 
-### 11.3 build vs deploy vs wipe
+### 11.3 build vs deploy vs wipe (4-script model)
 
+- **`build_persistent.sh`** — run **once ever**: creates the never-wiped persistent RG + a **static public IP** that anchors the stable host `rmassist.<ip>.nip.io` and the reusable Let's Encrypt cert.
 - **`build_rg.sh`** — run **once**: creates the RG + non-billable platform (phases 0–1).
-- **`build.sh [--type=ptu|payg]`** — the **billable** stack (phases 2–9), reusing the foundation (auto-heals it if missing). `--type=ptu` (default) = `GlobalProvisionedManaged` (15 PTU, hourly-billed even when idle); `--type=payg` = `GlobalStandard` (token-metered). This is the day-to-day entrypoint.
-- **`deploy.sh [--type=…]`** — one-shot greenfield (RG + phases 0–9); used by CI.
-- **`wipe.sh`** — tears down the **billable** stack, **keeps** RG + platform (fast re-deploy). **`wipe.sh --delete-rg`** — deletes the entire resource group (full clean). `ACS_FORCE_DELETE=1` and soft-delete purges ensure no stray AI/ACS resources survive.
+- **`build.sh [--regenerate-data]`** — the **billable** stack (phases 2–10 + on-VM data generation), reusing the foundation (auto-heals it if missing) and the persistent layer (bootstraps it if absent). The chat model is always **`gpt-5.4` (`GlobalStandard`)**. `--regenerate-data` forces a full dataset + SOP rebuild on the VM (keyless gpt-5.4) and re-freezes the baseline; without it the committed baseline is reused. On success it **auto-commits + pushes** `data/contosobank`, `docs/sop`, and `infra/cert`. This is the day-to-day entrypoint.
+- **`deploy.sh`** — one-shot greenfield (RG + phases 0–10); used by CI.
+- **`wipe.sh`** — tears down the **billable** stack, **keeps** RG + platform (fast re-deploy). **`wipe.sh --delete-rg`** — **full purge**: deletes the entire RG (VM included), purges soft-deleted Cognitive Services accounts with retries, and **verifies no residue**. Never touches the persistent RG or committed cert. `tools/az-clean-slate.sh` is the belt-and-suspenders purge+verify helper.
 
 ---
 
@@ -466,7 +468,10 @@ Defined centrally in `infra/common/env.sh` (overridable via real env vars). High
 `AZ_SUBSCRIPTION_ID` (`ce9b822d-…`), `AZ_TENANT_ID` (`5cc1cdba-…`), `AZ_REGION=southindia`, `AZ_REGION_SEARCH=centralindia`, `AZ_REGION_SPEECH=centralindia`, `AZ_RG=rg-contoso-rmx-rakesh`.
 
 **Models / deployment profile**
-`DEPLOY_TYPE=ptu`, `AOAI_CHAT_MODEL_NAME=gpt-4.1-mini`, PTU: `…PTU_SKU_NAME=GlobalProvisionedManaged`, `…PTU_SKU_CAPACITY=15`; PAYG: `…PAYG_SKU_NAME=GlobalStandard`, `…PAYG_SKU_CAPACITY=50`; embeddings `text-embedding-3-small`; `VOICELIVE_MODEL=gpt-4.1`.
+`AOAI_CHAT_MODEL_NAME=gpt-5.4`, `AOAI_CHAT_DEPLOYMENT_NAME=gpt-5-4`, `AOAI_CHAT_SKU_NAME=GlobalStandard`; Foundry region `AZ_REGION_AOAI` (defaults to `AZ_REGION`); embeddings `text-embedding-3-small`; `VOICELIVE_MODEL=gpt-4.1`. (A build-time preflight verifies `gpt-5.4 GlobalStandard` is deployable in `AZ_REGION_AOAI`.)
+
+**Persistent layer / VM / cert (RM Assist pillars)**
+`AZ_RG_PERSISTENT=rg-contoso-rmx-persistent`, `NAME_PERSIST_PIP`, `NAME_VM=vm-rmx-host`, `VM_SIZE`, `VM_ADMIN_USER`, `RMASSIST_HOST_LABEL=rmassist` + `NIP_IO_SUFFIX=nip.io` (→ `rmassist.<ip>.nip.io`), `LETSENCRYPT_EMAIL`, `LETSENCRYPT_STAGING`, `CERT_DIR=infra/cert`. See `infra/common/env.sh` §5b. Build knobs: `SKIP_VMHOST`, `SKIP_DATAGEN`, `REGENERATE_DATA`, `COMMIT_ARTIFACTS`.
 
 **AI / voice runtime (consumed by videoassist + backend)**
 `AZURE_AI_ENDPOINT`, `AZURE_AI_SCOPE=https://ai.azure.com/.default`, `VOICE_AI_CHAT_DEPLOYMENT`, `VOICE_AI_FAST_DEPLOYMENT`, `VOICE_AI_WARMUP=1`, `AZURE_SPEECH_REGION`, `AZURE_SPEECH_RESOURCE_ID`, `ACS_DATA_LOCATION=India`.
@@ -507,16 +512,19 @@ cd contoso-retail-rm-assist-rakesh
 export TEAMS_WEBHOOK_URL='<your Teams Workflow webhook>'
 RM_UPN=admin@MngEnvMCAP175622.onmicrosoft.com bash setup-graph.sh   # Graph app + consent
 
+# (once ever) persistent RG + static IP + reusable cert anchor
+bash build_persistent.sh
+
 # (once) non-billable foundation
 bash build_rg.sh
 
-# billable stack
-bash build.sh --type=payg     # token-metered
-bash build.sh --type=ptu      # provisioned (default if --type omitted)
+# billable stack (gpt-5.4 GlobalStandard; reuses committed data + cert)
+bash build.sh                    # reuse committed dataset + SOPs (fast)
+bash build.sh --regenerate-data  # force a full gpt-5.4 dataset + SOP rebuild on the VM
 
 # teardown
 bash wipe.sh                  # keep RG + platform (fast re-deploy)
-bash wipe.sh --delete-rg      # full: delete the whole resource group
+bash wipe.sh --delete-rg      # full purge: delete the whole RG (persistent layer + cert kept)
 ```
 
 ### 14.2 From GitHub (no VM build)

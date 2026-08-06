@@ -49,8 +49,9 @@ $(printf '\033[1;36m╚═══════════════════
 RG $AZ_RG · region $AZ_REGION · tag $PROJECT_TAG   [RG CREATED by this build]
 Stage: $BUILD_STAGE  ($([ "$BUILD_STAGE" == "foundation" ] && echo "phase0+phase1 only — non-billable foundation" || { [ "$BUILD_STAGE" == "apps" ] && echo "phase2..phase9 — billable, reuses the existing foundation" || echo "all phases — one-shot"; }))
 Creates AI Foundry: $NAME_AISERVICES / $NAME_FOUNDRY_PROJECT
-Chat model [--type=$DEPLOY_TYPE]: $AOAI_CHAT_DEPLOYMENT_NAME ($AOAI_CHAT_SKU_NAME$([ "$DEPLOY_TYPE" == "ptu" ] && echo ", ${AOAI_CHAT_SKU_CAPACITY} PTU"))  — created by phase2, deleted with the RG on wipe
+Chat model: $AOAI_CHAT_DEPLOYMENT_NAME ($AOAI_CHAT_MODEL_NAME, $AOAI_CHAT_SKU_NAME) in $AZ_REGION_AOAI — created by phase2, deleted with the RG on wipe
 Embed model: $AOAI_EMBED_DEPLOYMENT_NAME ($AOAI_EMBED_SKU_NAME) — created by phase2, deleted with the RG on wipe
+Data-gen VM: $([ "${SKIP_VMHOST:-0}" == "1" ] && echo "SKIPPED (SKIP_VMHOST=1)" || echo "$NAME_VM + Caddy/TLS at $(rmassist_host 2>/dev/null || echo 'rmassist.<ip>.nip.io') — keyless gpt-5.4 generation")
 Logs: ${ACS_BUILD_LOGDIR:-/tmp/acs_build_logs}/<phase>.up.log
 EOF
 
@@ -154,8 +155,39 @@ if [[ -n "$PREBUILD_PID" ]]; then
   fi
 fi
 
-# phase4 needs phase1 AND phase2's secrets.
-run_wave up phase4-toolapi || abort "phase4-toolapi"
+# ---- Persistent layer + data-gen VM (phase10) + keyless gpt-5.4 generation on the VM --------
+# The VM (billable, in $AZ_RG) hosts Caddy/TLS and runs the dataset + SOP generation keylessly
+# via its managed identity. Its public IP is the PERSISTENT static IP (in the never-wiped
+# persistent RG) that anchors the reusable Let's Encrypt cert. Set SKIP_VMHOST=1 to skip the VM
+# entirely (no data-gen, no cert), or SKIP_DATAGEN=1 to bring up the VM but not (re)generate.
+if [[ "${SKIP_VMHOST:-0}" != "1" ]]; then
+  # Self-heal the persistent layer so 'bash build.sh' works from any state (idempotent).
+  if [[ -z "$(persist_ip 2>/dev/null)" ]]; then
+    warn "Persistent static IP absent — bootstrapping the persistent layer once (build_persistent.sh)."
+    bash "$SCRIPT_DIR/../build_persistent.sh" || abort "build_persistent"
+  else
+    ok "Persistent static IP present: $(persist_ip) ($(rmassist_host))"
+  fi
+  # phase4 (Tool API) and phase10 (VM/Caddy/cert) are independent given phase2 — build in parallel.
+  run_wave up phase4-toolapi phase10-vmhost || abort "wave3(phase4/phase10)"
+
+  # Generate/refresh the Contoso Bank dataset + SOP corpus ON THE VM (keyless gpt-5.4). The
+  # BASELINE_FROZEN sentinel makes this a fast no-op unless REGENERATE_DATA=1 forces a rebuild.
+  if [[ "${SKIP_DATAGEN:-0}" != "1" ]]; then
+    log "Generating/refreshing Contoso Bank data + SOPs on the VM (keyless gpt-5.4)$([ "${REGENERATE_DATA:-0}" == "1" ] && echo ' — REGENERATE forced')..."
+    if [[ "${REGENERATE_DATA:-0}" == "1" ]]; then
+      bash "$SCRIPT_DIR/../tools/run-generation-on-vm.sh" --regenerate-data || abort "run-generation-on-vm"
+    else
+      bash "$SCRIPT_DIR/../tools/run-generation-on-vm.sh" || abort "run-generation-on-vm"
+    fi
+  else
+    warn "SKIP_DATAGEN=1 — VM is up but data/SOP generation was skipped."
+  fi
+else
+  warn "SKIP_VMHOST=1 — skipping the data-gen/Caddy VM (phase10), the persistent layer and data generation."
+  # phase4 still needs to come up for the app pipeline.
+  run_wave up phase4-toolapi || abort "phase4-toolapi"
+fi
 
 # Wave 4 leaves: all need phase4; phase5 also needs phase2; phase9 grounds on phase4's Tool API.
 run_wave up phase5-rag phase9-videoassist || abort "wave4(phase5/phase9)"

@@ -100,7 +100,9 @@ Deletes the billable stack this demo created:
   • Chat deployment                   $AOAI_CHAT_DEPLOYMENT_NAME ($AOAI_CHAT_SKU_NAME)
   • Embedding deployment              $AOAI_EMBED_DEPLOYMENT_NAME ($AOAI_EMBED_SKU_NAME)
   • AI Search / ACS / Speech          $NAME_SEARCH / $NAME_ACS / $NAME_SPEECH
+$([ "$WIPE_DELETE_RG" == "1" ] && echo "  • VM host + disk/NIC/NSG/VNet       $NAME_VM (deleted with the RG)")
 $([ "$WIPE_DELETE_RG" == "1" ] && echo "  • Container Apps / ACR / UAMI / Log Analytics (Phase 1 platform)" || { [ "${KEEP_PLATFORM:-0}" == "1" ] && echo "  • Container Apps (KEEPS ACR / UAMI / Log Analytics — run once by build_rg.sh)" || echo "  • Container Apps / ACR / UAMI / Log Analytics (Phase 1 platform)"; })
+PRESERVED (never touched by wipe): persistent RG $AZ_RG_PERSISTENT (static IP + committed cert), and all committed git artifacts (data/contosobank, docs/sop, infra/cert).
 $([ "$WIPE_DELETE_RG" == "1" ] && [ "$WIPE_PURGE_SOFT_DELETED" == "1" ] && echo "Then purges soft-deleted $NAME_AISERVICES and $NAME_SPEECH so names free up.")
 $([ "${WIPE_GRAPH_APP:-1}" == "1" ] && echo "Also removes the stray Entra app registration '${GRAPH_APP_NAME:-contoso-videoassist-rm-calendar}' (setup-graph.sh).")
 $([ "${WIPE_LOCAL_STATE:-1}" == "1" ] && echo "Also clears stale local state (infra/common/secrets.env, phase*/outputs.env).")
@@ -146,18 +148,50 @@ if [[ "$WIPE_DELETE_RG" == "1" ]]; then
       fi
 
       # Purge soft-deleted resources so their (globally-unique) names are immediately reusable.
+      # Soft-delete LAGS the RG delete, so a single purge often "succeeds" without freeing the
+      # name — retry each account a few times. The Foundry account lives in $AZ_REGION_AOAI (it
+      # may differ from $AZ_REGION so gpt-5.4 GlobalStandard is available); Speech in $AZ_REGION_SPEECH.
       if [[ "$WIPE_PURGE_SOFT_DELETED" == "1" ]]; then
-        log "Purging soft-deleted Cognitive Services accounts so names free up..."
-        for pair in "$NAME_AISERVICES:$AZ_REGION" "$NAME_SPEECH:$AZ_REGION_SPEECH"; do
+        log "Purging soft-deleted Cognitive Services accounts so names free up (with retries)..."
+        for pair in "$NAME_AISERVICES:$AZ_REGION_AOAI" "$NAME_SPEECH:$AZ_REGION_SPEECH"; do
           acct="${pair%%:*}"; acct_region="${pair##*:}"
           [[ -n "$acct" ]] || continue
-          if az cognitiveservices account purge \
-               --name "$acct" --resource-group "$AZ_RG" --location "$acct_region" -o none 2>/dev/null; then
-            ok "Purged soft-deleted Cognitive Services account: $acct ($acct_region)"
-          else
-            warn "Could not purge '$acct' (may not be soft-deleted, already purged, or no soft-delete on this sub) — continuing."
+          purged=0
+          for attempt in $(seq 1 "${WIPE_PURGE_ATTEMPTS:-8}"); do
+            # Already absent from the soft-deleted list -> name is free, done.
+            if ! az cognitiveservices account list-deleted --query "[?name=='$acct'] | [0].name" -o tsv 2>/dev/null | grep -q .; then
+              ok "Soft-deleted '$acct' not present (name free)."; purged=1; break
+            fi
+            if az cognitiveservices account purge \
+                 --name "$acct" --resource-group "$AZ_RG" --location "$acct_region" -o none 2>/dev/null; then
+              ok "Purged soft-deleted Cognitive Services account: $acct ($acct_region)"; purged=1; break
+            fi
+            log "  purge attempt $attempt/${WIPE_PURGE_ATTEMPTS:-8} for '$acct' not ready (soft-delete lagging); waiting..."
+            sleep "${WIPE_PURGE_SLEEP:-15}"
+          done
+          [[ "$purged" == "1" ]] || warn "Could not purge '$acct' after ${WIPE_PURGE_ATTEMPTS:-8} attempts — run 'bash tools/az-clean-slate.sh' to finish."
+        done
+      fi
+
+      # Verification gate: confirm NOTHING survives (no RG, no soft-deleted names). This is what
+      # makes the wipe a true full purge rather than a best-effort delete. The persistent RG
+      # ($AZ_RG_PERSISTENT — static IP + committed cert) is intentionally NOT checked/deleted.
+      if [[ "$WIPE_PURGE_SOFT_DELETED" == "1" ]]; then
+        residue=0
+        if az group show --name "$AZ_RG" -o none 2>/dev/null; then
+          warn "Residue: resource group '$AZ_RG' still present (deletion may still be finalizing)."; residue=1
+        fi
+        for acct in "$NAME_AISERVICES" "$NAME_SPEECH"; do
+          [[ -n "$acct" ]] || continue
+          if az cognitiveservices account list-deleted --query "[?name=='$acct'] | [0].name" -o tsv 2>/dev/null | grep -q .; then
+            warn "Residue: soft-deleted account still present: $acct"; residue=1
           fi
         done
+        if [[ "$residue" == "0" ]]; then
+          ok "Full purge verified — no RG and no soft-deleted residue. Persistent RG '$AZ_RG_PERSISTENT' preserved."
+        else
+          warn "Purge left residue. Run 'bash tools/az-clean-slate.sh' (waits + retries + verifies)."
+        fi
       fi
     fi
   fi
@@ -195,7 +229,7 @@ export KEEP_PLATFORM="${KEEP_PLATFORM:-0}"
 warn "WIPE_DELETE_RG=0 — per-phase teardown; the resource group $AZ_RG will be left in place."
 
 run_wave down phase9-videoassist phase6-crm phase5-rag || warn "Wave 1 had failures (continuing)"
-run_wave down phase4-toolapi phase3-data        || warn "Wave 2 had failures (continuing)"
+run_wave down phase10-vmhost phase4-toolapi phase3-data || warn "Wave 2 had failures (continuing)"
 run_wave down phase2-ai                         || warn "Wave 3 had failures (continuing)"
 if [[ "$KEEP_PLATFORM" == "1" ]]; then
   warn "KEEP_PLATFORM=1 — preserving Phase 1 platform (env/ACR/UAMI/LogAnalytics). Skipping the slow env-delete."

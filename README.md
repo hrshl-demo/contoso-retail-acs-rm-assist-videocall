@@ -6,13 +6,16 @@ single end-to-end customer journey: the *Everyday RM Assist* flow for retail cus
 
 Everything is synthetic (data, personas, transcripts). The stack is **fully self-contained and
 all-or-nothing**: it **creates its own resource group in South India and provisions everything inside
-it** — the Azure AI Foundry account + project, the **`gpt-4.1-mini` chat deployment** (a 15-PTU
-`GlobalProvisionedManaged` deployment by default, or a pay-as-you-go one with `--type=payg`), the
-`text-embedding-3-small` embedding deployment, AI Search, ACS + Email, Speech, and all the app
-infrastructure. Deploy it in one shot with **`deploy.sh`**, or split it into a one-time non-billable
-foundation (**`build_rg.sh`**) plus a per-demo billable build (**`build.sh`**); **`wipe.sh`** tears the
-billable stack back down. Nothing is pre-provisioned or shared, so you can clone, deploy, demo, and
-tear the whole thing down with a couple of commands.
+it** — the Azure AI Foundry account + project, the **`gpt-5.4` chat deployment** (a `GlobalStandard`
+deployment used both for runtime intelligence and for **AI-generating the datasets + SOP corpus**),
+the `text-embedding-3-small` embedding deployment, AI Search, ACS + Email, Speech, a **data-generation
++ Caddy/TLS VM**, and all the app infrastructure. It follows a **4-script model**: run
+**`build_persistent.sh`** ONCE ever (a never-wiped static IP + reusable Let's Encrypt cert), then
+**`build_rg.sh`** ONCE (the non-billable foundation), then **`build.sh`** per demo (the billable stack
+— add `--regenerate-data` to force a full dataset + SOP rebuild on the VM with gpt-5.4); **`wipe.sh`**
+fully purges the billable RG with **no soft-delete residue**, while preserving the persistent layer +
+committed cert + committed data. Nothing is pre-provisioned or shared, so you can clone, deploy, demo,
+and tear the whole thing down with a couple of commands.
 
 > **All configuration lives in one file: [`infra/common/env.sh`](infra/common/env.sh).**
 > It is pre-filled with the demo values. Nothing else hardcodes configuration — every script sources
@@ -33,7 +36,7 @@ The RM (Priya Nair) works a portfolio in a CRM cockpit and is coached through a 
    live **synopsis + nudges** to the RM (optionally into Microsoft Teams) as the conversation unfolds.
 7. **Scheduling** — a customer-facing self-service page to book the follow-up.
 
-The chat/synopsis/nudge intelligence is served by the **15-PTU `gpt-4.1-mini`** deployment this stack creates.
+The chat/synopsis/nudge intelligence is served by the **`gpt-5.4` (`GlobalStandard`)** deployment this stack creates.
 
 ---
 
@@ -66,6 +69,51 @@ flowchart TB
   VA -. optional .-> EXT
   ACS --> VA
 ```
+
+---
+
+## Foundation, data-gen VM & full-purge build/wipe (RM Assist pillars)
+
+Beyond the single video-call demo, this repo now provisions the three foundational pillars of the
+broader six-use-case **RM Assist** design for **Contoso Bank**:
+
+**1. `gpt-5.4` Global Standard.** The chat deployment is `gpt-5.4` (`GlobalStandard`), created in the
+billable RG by phase 2 and deleted by wipe. It powers both runtime intelligence and the AI generation
+of the dataset + SOP corpus. The Foundry account lives in `AZ_REGION_AOAI` (defaults to `AZ_REGION`;
+override if `gpt-5.4 GlobalStandard` isn't offered in your region — a build-time capability preflight
+fails fast with guidance). Config: `infra/common/env.sh` §4.
+
+**2. VM + Caddy + Let's Encrypt, minted once and committed.** A never-wiped **persistent RG**
+(`build_persistent.sh`, run once ever) holds a **static public IP** that anchors the stable host
+`rmassist.<ip>.nip.io`. A billable Ubuntu **VM** (phase 10) borrows that IP and runs **Caddy**, which
+obtains a Let's Encrypt cert via HTTP-01 on the **first build only**; the cert store is then exported to
+**`infra/cert/`** and committed. Every later build **pre-seeds the committed cert** so it is reused with
+**no ACME call** (avoiding rate limits). The persistent RG + cert survive every wipe.
+
+**3. Datasets + SOPs generated on the VM, auto-committed; full-purge wipe.** The dataset
+(`data/contosobank/`) and SOP corpus (`docs/sop/contosobank_*.md`) are generated **on the VM** using the
+VM's **managed identity** (keyless `gpt-5.4`) — deterministic Python owns all structural integrity
+(IDs, FKs, amounts, ledgers), and **every narrative field** (notes, emails, complaints, meeting
+summaries, covenant/collateral prose, SOPs) is AI-enriched. A `BASELINE_FROZEN` sentinel freezes the
+result so future builds reuse it; **`build.sh --regenerate-data`** forces a full regenerate + re-freeze.
+`build.sh` then **auto-commits + pushes** the data, SOPs and cert. `wipe.sh --delete-rg` performs a
+**full purge**: it deletes the whole RG (VM included), purges soft-deleted Cognitive Services accounts
+with retries, and **verifies no residue** — `tools/az-clean-slate.sh` is the belt-and-suspenders
+purge+verify helper.
+
+### The 4-script model
+
+```bash
+bash build_persistent.sh        # ONCE ever  — persistent RG + static IP + reusable cert anchor
+bash build_rg.sh                # ONCE       — non-billable foundation (RG + platform)
+bash build.sh                   # per demo   — billable stack; reuses committed data + cert
+bash build.sh --regenerate-data # per demo   — force a full gpt-5.4 dataset + SOP rebuild on the VM
+bash wipe.sh --delete-rg        # after demo — FULL PURGE of the billable RG (persistent layer kept)
+```
+
+Useful knobs: `SKIP_VMHOST=1` (skip the VM/cert/data-gen entirely), `SKIP_DATAGEN=1` (bring the VM up
+but don't regenerate), `COMMIT_ARTIFACTS=0` (don't auto-commit/push), `LETSENCRYPT_STAGING=1` (mint from
+the LE staging CA while testing). See `infra/common/env.sh` §5b for the persistent/VM/cert config.
 
 ---
 

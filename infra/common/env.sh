@@ -59,6 +59,14 @@ export AZ_REGION_SEARCH="${AZ_REGION_SEARCH:-centralindia}"
 # account + region, so keep them consistent. Override freely.
 export AZ_REGION_SPEECH="${AZ_REGION_SPEECH:-centralindia}"
 
+# The AI Foundry (AIServices) ACCOUNT region. The gpt-5.4 GlobalStandard model must be
+# deployable here; newer GPT-5 family models are not offered in every Indian region, so
+# this is a SEPARATE knob from AZ_REGION. GlobalStandard routes inference globally, so the
+# account region is a deployment-availability constraint, not a data-residency guarantee.
+# Defaults to AZ_REGION; override (e.g. AZ_REGION_AOAI=eastus2) if the capability preflight
+# reports gpt-5.4 GlobalStandard is unavailable in AZ_REGION.
+export AZ_REGION_AOAI="${AZ_REGION_AOAI:-$AZ_REGION}"
+
 # =====================================================================================
 # 2) AI FOUNDRY  (CREATED + DELETED by this stack — see section 5 for the actual names)
 # =====================================================================================
@@ -85,51 +93,33 @@ fi
 export SUFFIX
 
 # =====================================================================================
-# 4) CHAT MODEL — selected by DEPLOY_TYPE  (default 'ptu'; 'payg' via `deploy.sh --type=payg`)
+# 4) CHAT MODEL — single gpt-5.4 GlobalStandard deployment (the LARGE generation model)
 # =====================================================================================
-# Two mutually-exclusive profiles, chosen by DEPLOY_TYPE. In THIS self-contained build the
-# chat deployment is ALWAYS created on the freshly-provisioned Foundry account and ALWAYS
-# deleted with the resource group on wipe — the only difference is the SKU that gets created:
+# This build provisions ONE large chat model: gpt-5.4 on the GlobalStandard (pay-per-token)
+# SKU. It is created on the freshly-provisioned Foundry account by phase2 and deleted with
+# the resource group on wipe. It is the model used to GENERATE + ENRICH the Contoso Bank
+# synthetic dataset and author the SOP corpus (run on the VM, keyless via managed identity),
+# and later powers the app runtime. gpt-4.1-mini is intentionally NOT used.
 #
-#   ptu  (DEFAULT) — CREATE a 15-PTU gpt-4.1-mini deployment (GlobalProvisionedManaged).
-#   payg           — CREATE a pay-as-you-go gpt-4.1-mini deployment (GlobalStandard).
-#                    Selected with:  bash deploy.sh --type=payg
-#
-# DEPLOY_TYPE is exported by deploy.sh / wipe.sh from the --type flag; default is 'ptu'.
-export DEPLOY_TYPE="${DEPLOY_TYPE:-ptu}"
+# DEPLOY_TYPE (ptu|payg) is still accepted on the --type flag for CLI symmetry with the
+# existing scripts, but it NO LONGER switches the model or SKU — the deployment is always
+# gpt-5.4 GlobalStandard. Override AOAI_CHAT_* below to retarget.
+export DEPLOY_TYPE="${DEPLOY_TYPE:-payg}"
 if [[ "$DEPLOY_TYPE" != "ptu" && "$DEPLOY_TYPE" != "payg" ]]; then
-  printf '\033[1;33m[!]\033[0m Unknown DEPLOY_TYPE="%s" — falling back to "ptu".\n' "$DEPLOY_TYPE" >&2
-  DEPLOY_TYPE="ptu"; export DEPLOY_TYPE
+  printf '\033[1;33m[!]\033[0m Unknown DEPLOY_TYPE="%s" — falling back to "payg".\n' "$DEPLOY_TYPE" >&2
+  DEPLOY_TYPE="payg"; export DEPLOY_TYPE
 fi
 
-# Common model coordinates (identical for both profiles).
-export AOAI_CHAT_MODEL_NAME="${AOAI_CHAT_MODEL_NAME:-gpt-4.1-mini}"
+# Model coordinates. Deployment name avoids the dot (Azure deployment names are
+# alphanumerics/dash/underscore); the model NAME keeps the dotted identifier. Version is
+# auto-discovered (empty => latest available on the account's region) unless pinned here.
+export AOAI_CHAT_MODEL_NAME="${AOAI_CHAT_MODEL_NAME:-gpt-5.4}"
 export AOAI_CHAT_MODEL_FORMAT="${AOAI_CHAT_MODEL_FORMAT:-OpenAI}"
 export AOAI_CHAT_MODEL_VERSION="${AOAI_CHAT_MODEL_VERSION:-}"   # empty => auto-discover latest available version
-
-# --- PAYG profile knobs (used only when DEPLOY_TYPE=payg) ---------------------------
-# CREATED here + DELETED on wipe (a GlobalStandard, pay-per-token deployment).
-export AOAI_CHAT_PAYG_DEPLOYMENT_NAME="${AOAI_CHAT_PAYG_DEPLOYMENT_NAME:-gpt-4.1-mini-payg}"
-export AOAI_CHAT_PAYG_SKU_NAME="${AOAI_CHAT_PAYG_SKU_NAME:-GlobalStandard}"
-export AOAI_CHAT_PAYG_SKU_CAPACITY="${AOAI_CHAT_PAYG_SKU_CAPACITY:-50}"   # ×1K tokens/min quota units
-
-# --- PTU profile knobs (used only when DEPLOY_TYPE=ptu) -----------------------------
-export AOAI_CHAT_PTU_DEPLOYMENT_NAME="${AOAI_CHAT_PTU_DEPLOYMENT_NAME:-gpt-4.1-mini-ptu}"
-export AOAI_CHAT_PTU_SKU_NAME="${AOAI_CHAT_PTU_SKU_NAME:-GlobalProvisionedManaged}"        # PTU (Provisioned Throughput)
-export AOAI_CHAT_PTU_SKU_CAPACITY="${AOAI_CHAT_PTU_SKU_CAPACITY:-15}"                      # 15 PTU
-
-# Resolve the ACTIVE chat deployment (name + SKU + capacity) from the selected profile.
-# Both profiles are lifecycle-managed (created by phase2, deleted with the RG on wipe).
-if [[ "$DEPLOY_TYPE" == "payg" ]]; then
-  export AOAI_CHAT_DEPLOYMENT_NAME="$AOAI_CHAT_PAYG_DEPLOYMENT_NAME"
-  export AOAI_CHAT_SKU_NAME="$AOAI_CHAT_PAYG_SKU_NAME"
-  export AOAI_CHAT_SKU_CAPACITY="$AOAI_CHAT_PAYG_SKU_CAPACITY"
-else
-  export AOAI_CHAT_DEPLOYMENT_NAME="$AOAI_CHAT_PTU_DEPLOYMENT_NAME"
-  export AOAI_CHAT_SKU_NAME="$AOAI_CHAT_PTU_SKU_NAME"
-  export AOAI_CHAT_SKU_CAPACITY="$AOAI_CHAT_PTU_SKU_CAPACITY"
-fi
-export AOAI_CHAT_MANAGE_LIFECYCLE="1"                 # ALWAYS create (phase2) + delete (wipe)
+export AOAI_CHAT_DEPLOYMENT_NAME="${AOAI_CHAT_DEPLOYMENT_NAME:-gpt-5-4}"
+export AOAI_CHAT_SKU_NAME="${AOAI_CHAT_SKU_NAME:-GlobalStandard}"
+export AOAI_CHAT_SKU_CAPACITY="${AOAI_CHAT_SKU_CAPACITY:-50}"   # ×1K tokens/min quota units
+export AOAI_CHAT_MANAGE_LIFECYCLE="1"                           # ALWAYS create (phase2) + delete (wipe)
 
 # Optional safety net (space-separated deployment names never deleted by phase2 down.sh).
 # In this self-contained build the whole RG is deleted on wipe, so nothing is protected
@@ -188,6 +178,56 @@ export NAME_ACS_VIDEO="acs-rmx-video-${SUFFIX}"  # video tokens only (no purchas
 
 # AI Search index name for the SOP knowledge base (phase5 RAG).
 export SEARCH_INDEX_NAME="contoso-retail-policy-index"
+
+# =====================================================================================
+# 5b) PERSISTENT LAYER + DATA-GEN VM + LET'S ENCRYPT CERT  (pillars 2 & 3)
+# =====================================================================================
+# A tiny PERSISTENT resource group holds the ONE thing that must survive a full wipe: a
+# STATIC public IP. The Let's Encrypt certificate is bound to a domain, and we derive that
+# domain from the static IP as  rmassist.<ip>.nip.io  — so keeping the IP stable across
+# rebuilds is what lets us obtain the cert ONCE (first build), commit it to git, and reuse
+# it forever. wipe.sh only ever targets $AZ_RG (the billable RG); it NEVER touches
+# $AZ_RG_PERSISTENT. The persistent RG carries its OWN tag so the wipe safety-guard would
+# refuse to delete it even if pointed at it by mistake.
+export AZ_RG_PERSISTENT="${AZ_RG_PERSISTENT:-rg-contoso-rmx-persistent}"
+# The static IP and the VM that borrows it MUST be in the same region, so the persistent
+# region tracks the billable VM region ($AZ_REGION), independent of the AOAI account region.
+export AZ_REGION_PERSISTENT="${AZ_REGION_PERSISTENT:-$AZ_REGION}"
+export PROJECT_TAG_VALUE_PERSISTENT="${PROJECT_TAG_VALUE_PERSISTENT:-contoso-retail-rm-assist-rakesh-persistent}"
+export PROJECT_TAG_PERSISTENT="${PROJECT_TAG_KEY}=${PROJECT_TAG_VALUE_PERSISTENT}"
+export NAME_PERSIST_PIP="${NAME_PERSIST_PIP:-pip-rmx-persist}"     # static Standard public IP (nip.io anchor)
+
+# --- Data-generation / Caddy VM (CREATED in the billable RG, DELETED on wipe) ----------
+# One small Ubuntu VM does double duty: (1) it hosts Caddy which terminates TLS with the
+# committed Let's Encrypt cert, and (2) it RUNS the dataset + SOP generation keylessly via
+# its system-assigned managed identity (no key, no GitHub secret on the VM). The local
+# orchestrator retrieves the generated artifacts over SSH and pushes them to git.
+export NAME_VM="${NAME_VM:-vm-rmx-host}"
+export NAME_VM_NIC="${NAME_VM_NIC:-nic-rmx-host}"
+export NAME_VM_NSG="${NAME_VM_NSG:-nsg-rmx-host}"
+export NAME_VM_VNET="${NAME_VM_VNET:-vnet-rmx-host}"
+export VM_ADMIN_USER="${VM_ADMIN_USER:-azureuser}"
+export VM_SIZE="${VM_SIZE:-Standard_B2s}"
+export VM_IMAGE="${VM_IMAGE:-Ubuntu2204}"
+# Local SSH keypair the orchestrator uses to reach the VM (created by phase10 if absent;
+# the private key is git-ignored — see .gitignore). No password auth is enabled on the VM.
+export VM_SSH_KEY_DIR="${VM_SSH_KEY_DIR:-$HOME/.ssh}"
+export VM_SSH_KEY_NAME="${VM_SSH_KEY_NAME:-rmx_vm_host}"
+
+# --- Let's Encrypt cert (obtained ONCE, committed under infra/cert/, reused forever) ----
+# The host label + derived FQDN. RMASSIST_HOST is computed at build time from the static IP
+# ($PERSIST_IP) once the persistent layer exists; export it yourself to override.
+export RMASSIST_HOST_LABEL="${RMASSIST_HOST_LABEL:-rmassist}"
+export NIP_IO_SUFFIX="${NIP_IO_SUFFIX:-nip.io}"
+# ACME registration address for Let's Encrypt (used only on the very first, cert-minting build).
+export LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-rmassist-demo@example.com}"
+# Set LETSENCRYPT_STAGING=1 to mint from LE's staging CA (untrusted, but no rate limits) while
+# testing the flow; the default (0) uses the production CA so the committed cert is real.
+export LETSENCRYPT_STAGING="${LETSENCRYPT_STAGING:-0}"
+# Where the committed cert + ACME account live in the repo, and the freeze sentinel that makes
+# every later build REUSE them instead of calling Let's Encrypt again.
+export CERT_DIR="${CERT_DIR:-infra/cert}"
+export CERT_FROZEN_SENTINEL="${CERT_FROZEN_SENTINEL:-infra/cert/CERT_FROZEN}"
 
 # =====================================================================================
 # 6) VIDEO ASSIST — AI + Speech + ACS  (derived from the created Foundry account)
@@ -356,6 +396,36 @@ ensure_rg() {
 # Standard tag args for any `az ... create` or `az resource tag` call.
 tag_args() {
   printf -- '--tags %s=%s phase=%s' "$PROJECT_TAG_KEY" "$PROJECT_TAG_VALUE" "${PHASE:-unknown}"
+}
+
+# ---- Persistent layer helpers (pillar 2/3: static IP -> stable nip.io host) -----------
+# ensure_rg_persistent — create the never-wiped persistent RG (distinct tag) if absent.
+ensure_rg_persistent() {
+  if az group show --name "$AZ_RG_PERSISTENT" --subscription "$AZ_SUBSCRIPTION_ID" >/dev/null 2>&1; then
+    ok "Persistent resource group: $AZ_RG_PERSISTENT (kept across every wipe)"
+  else
+    log "Creating PERSISTENT resource group $AZ_RG_PERSISTENT in $AZ_REGION_PERSISTENT ..."
+    az group create --name "$AZ_RG_PERSISTENT" --location "$AZ_REGION_PERSISTENT" \
+      --tags "${PROJECT_TAG_KEY}=${PROJECT_TAG_VALUE_PERSISTENT}" \
+      --subscription "$AZ_SUBSCRIPTION_ID" --only-show-errors -o none \
+      || die "Failed to create persistent resource group $AZ_RG_PERSISTENT."
+    ok "Created persistent resource group: $AZ_RG_PERSISTENT ($AZ_REGION_PERSISTENT)"
+  fi
+}
+
+# persist_ip — echo the persistent static public IP address (empty if the PIP is absent).
+persist_ip() {
+  az network public-ip show -g "$AZ_RG_PERSISTENT" -n "$NAME_PERSIST_PIP" \
+    --query ipAddress -o tsv 2>/dev/null || true
+}
+
+# rmassist_host — echo the derived stable FQDN  rmassist.<ip>.nip.io  (empty if no IP yet).
+# Honours an explicit RMASSIST_HOST override from the environment.
+rmassist_host() {
+  if [[ -n "${RMASSIST_HOST:-}" ]]; then printf '%s' "$RMASSIST_HOST"; return 0; fi
+  local ip; ip="$(persist_ip)"
+  [[ -n "$ip" ]] || return 0
+  printf '%s.%s.%s' "$RMASSIST_HOST_LABEL" "$ip" "$NIP_IO_SUFFIX"
 }
 
 # Safety guard: refuse to delete anything not tagged with our project.

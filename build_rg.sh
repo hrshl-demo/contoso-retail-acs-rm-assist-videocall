@@ -28,12 +28,10 @@ export BUILD_STAGE="foundation"
 # shellcheck disable=SC1091
 source infra/common/env.sh
 
-if ! az account show >/dev/null 2>&1; then
-  az login --use-device-code
-fi
-
-echo "Active Azure context:"
-az account show --query '{Subscription:name,SubscriptionId:id,TenantId:tenantId}' --output table
+# Azure login + subscription are already configured in the environment (e.g. the jump VM).
+# We only pin the target subscription for az commands in THIS process — no 'az login',
+# no 'az account show'.
+[[ -n "${AZ_SUBSCRIPTION_ID:-}" ]] && az account set --subscription "$AZ_SUBSCRIPTION_ID" >/dev/null 2>&1 || true
 
 echo
 echo "Foundation target: resource group $AZ_RG ($AZ_REGION)   [created ONCE — kept across demos]"

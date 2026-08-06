@@ -83,6 +83,17 @@ az deployment group create \
 ok "VM deployed: $NAME_VM"
 
 VM_PRINCIPAL_ID="$(az vm show -g "$AZ_RG" -n "$NAME_VM" --query identity.principalId -o tsv 2>/dev/null || true)"
+# The system-assigned identity's principalId can lag a few seconds behind VM creation; retry so
+# the keyless Foundry role grant below never silently skips.
+if [[ -z "$VM_PRINCIPAL_ID" ]]; then
+  for _i in $(seq 1 12); do
+    sleep 5
+    VM_PRINCIPAL_ID="$(az vm show -g "$AZ_RG" -n "$NAME_VM" --query identity.principalId -o tsv 2>/dev/null || true)"
+    [[ -n "$VM_PRINCIPAL_ID" ]] && break
+  done
+fi
+[[ -n "$VM_PRINCIPAL_ID" ]] && ok "VM managed-identity principal: $VM_PRINCIPAL_ID" \
+  || warn "Could not resolve the VM managed-identity principalId — the keyless role grant may be skipped."
 
 # ---------- SSH helpers ----------
 SSH_OPTS=(-i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 -o LogLevel=ERROR)
@@ -189,18 +200,41 @@ EOF
 fi
 
 # ---------- Grant the VM MSI keyless access to the gpt-5.4 Foundry account ----------
+# Both roles are granted at the Foundry ACCOUNT scope: "Cognitive Services OpenAI User" is the
+# data-plane role the generators actually need; "Cognitive Services User" is belt-and-braces.
+# Create is idempotent; we then VERIFY at least one data-plane role is present so a silent grant
+# failure surfaces here (not 10 min later in the generation preflight).
 if [[ -n "$VM_PRINCIPAL_ID" ]]; then
   AISVC_ID="$(az cognitiveservices account show -n "$NAME_AISERVICES" -g "$AZ_RG" --query id -o tsv 2>/dev/null || true)"
+  if [[ -z "$AISVC_ID" ]]; then
+    # phase2 creates the Foundry account before phase10 runs, but be defensive under re-runs.
+    for _i in $(seq 1 12); do
+      sleep 5
+      AISVC_ID="$(az cognitiveservices account show -n "$NAME_AISERVICES" -g "$AZ_RG" --query id -o tsv 2>/dev/null || true)"
+      [[ -n "$AISVC_ID" ]] && break
+    done
+  fi
   if [[ -n "$AISVC_ID" ]]; then
-    for role in "Cognitive Services User" "Cognitive Services OpenAI User"; do
+    for role in "Cognitive Services OpenAI User" "Cognitive Services User"; do
       az role assignment create --assignee-object-id "$VM_PRINCIPAL_ID" --assignee-principal-type ServicePrincipal \
         --role "$role" --scope "$AISVC_ID" -o none 2>/dev/null \
         && ok "Granted VM MSI '$role' on $NAME_AISERVICES" \
         || log "VM MSI '$role' on $NAME_AISERVICES already present or not grantable now (continuing)."
     done
+    GRANTED_ROLES="$(az role assignment list --assignee "$VM_PRINCIPAL_ID" --scope "$AISVC_ID" \
+      --query "[].roleDefinitionName" -o tsv 2>/dev/null || true)"
+    if printf '%s\n' "$GRANTED_ROLES" | grep -qiE 'Cognitive Services (OpenAI )?User'; then
+      ok "Verified keyless Foundry role(s) on the VM MSI: $(printf '%s' "$GRANTED_ROLES" | tr '\n' ',' | sed 's/,$//')"
+    else
+      warn "Could NOT verify a Cognitive Services data-plane role on the VM MSI. Keyless generation"
+      warn "will likely fail. Ensure you can create role assignments on $NAME_AISERVICES, then re-run."
+    fi
   else
-    warn "Foundry account $NAME_AISERVICES not found yet — the VM MSI role grant will be retried by the generation step."
+    warn "Foundry account $NAME_AISERVICES not found — cannot grant the VM MSI keyless access."
+    warn "Run phase2-ai first (it creates the gpt-5.4 Foundry account), then re-run this phase."
   fi
+else
+  warn "No VM managed-identity principalId — skipping the keyless Foundry role grant (generation will fail)."
 fi
 
 # ---------- Outputs ----------

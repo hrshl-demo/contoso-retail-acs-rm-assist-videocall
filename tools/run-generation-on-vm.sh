@@ -62,6 +62,30 @@ tar -C "$REPO_ROOT" -czf - data/contosobank tools docs/sop \
   || die "Failed to sync inputs to the VM."
 ok "Inputs synced."
 
+# ---------- 1b) Wait for keyless RBAC to propagate (managed identity -> gpt-5.4) ----------
+# phase10 grants this VM's system-assigned identity the Cognitive Services roles on the
+# Foundry account, but data-plane RBAC can take a few minutes to become effective. Probe with
+# a tiny chat completion (same auth path as the generators) and retry, so the expensive
+# generation below never starts before keyless access is live. Skip with SKIP_AUTH_PREFLIGHT=1.
+if [[ "${SKIP_AUTH_PREFLIGHT:-0}" != "1" ]]; then
+  PREFLIGHT_ENV="FOUNDRY_AOAI_ENDPOINT='${FOUNDRY_AOAI_ENDPOINT}' FOUNDRY_CHAT_DEPLOYMENT='${FOUNDRY_CHAT_DEPLOYMENT}'"
+  AUTH_TRIES="${AUTH_PREFLIGHT_TRIES:-30}"   # 30 * 20s = up to 10 min for RBAC propagation
+  log "Verifying keyless gpt-5.4 access from the VM's managed identity (RBAC propagation)..."
+  auth_ok=0
+  for i in $(seq 1 "$AUTH_TRIES"); do
+    if vm_ssh "cd $WS && ${PREFLIGHT_ENV} python3 tools/aoai_preflight.py"; then
+      auth_ok=1; ok "Keyless gpt-5.4 access confirmed (attempt $i)."; break
+    fi
+    log "gpt-5.4 not authorized yet (attempt $i/$AUTH_TRIES) — waiting 20s for RBAC to propagate..."
+    sleep 20
+  done
+  if [[ "$auth_ok" != "1" ]]; then
+    warn "The VM's managed identity still cannot call gpt-5.4 after ~$((AUTH_TRIES * 20 / 60)) min."
+    warn "Check the role grant on $NAME_AISERVICES (Cognitive Services User + OpenAI User) and the endpoint."
+    die "Keyless gpt-5.4 access did not become available — aborting before generation."
+  fi
+fi
+
 # ---------- 2) Run generation on the VM (keyless gpt-5.4 via managed identity) ----------
 log "Running generation on the VM (ensure-baseline${FORCE:+ $FORCE}) — gpt-5.4 keyless via MSI ..."
 # The Foundry endpoint + deployment are exported into the remote shell; DefaultAzureCredential

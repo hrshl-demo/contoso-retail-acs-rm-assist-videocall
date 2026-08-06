@@ -363,16 +363,17 @@ confirm() {
 }
 
 ensure_az_login() {
-  local current_sub
-  current_sub="$(az account show --query id -o tsv 2>/dev/null || true)"
-  if [[ -z "$current_sub" ]]; then
-    die "az not logged in. Run 'az login' first."
+  # Azure login is assumed to be already done by the operator/environment (e.g. an Azure jump VM
+  # with 'az login' + subscription already configured, or a managed identity). We deliberately do
+  # NOT run 'az login' or 'az account show' here. We only (idempotently, silently) pin the target
+  # subscription so every 'az' call in this process hits the demo's subscription.
+  if [[ -n "${AZ_SUBSCRIPTION_ID:-}" ]]; then
+    az account set --subscription "$AZ_SUBSCRIPTION_ID" >/dev/null 2>&1 \
+      || warn "Could not set subscription $AZ_SUBSCRIPTION_ID (assuming the active subscription is correct)."
+    ok "Subscription: $AZ_SUBSCRIPTION_ID"
+  else
+    ok "Using the environment's active Azure subscription."
   fi
-  if [[ "$current_sub" != "$AZ_SUBSCRIPTION_ID" ]]; then
-    warn "Current subscription ($current_sub) != expected ($AZ_SUBSCRIPTION_ID). Switching."
-    az account set --subscription "$AZ_SUBSCRIPTION_ID"
-  fi
-  ok "Subscription: $AZ_SUBSCRIPTION_ID"
 }
 
 ensure_rg() {

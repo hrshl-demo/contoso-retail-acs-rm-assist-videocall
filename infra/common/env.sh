@@ -509,14 +509,16 @@ print_demo_urls() {
   # Print URLs discovered from phase outputs. Safe when some phases have not run.
   local root
   root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-  local toolapi="" dash="" search="" videoassist=""
+  local toolapi="" dash="" search="" videoassist="" console=""
   [[ -f "$root/phase4-toolapi/outputs.env" ]] && source "$root/phase4-toolapi/outputs.env" && toolapi="${TOOLAPI_URL:-}"
   [[ -f "$root/phase6-crm/outputs.env" ]] && source "$root/phase6-crm/outputs.env" && dash="${DASH_URL:-${DASHBOARD_URL:-}}"
   [[ -f "$root/phase9-videoassist/outputs.env" ]] && source "$root/phase9-videoassist/outputs.env" && videoassist="${VIDEOASSIST_URL:-}"
   [[ -f "$root/phase5-rag/outputs.env" ]] && source "$root/phase5-rag/outputs.env" && search="${SEARCH_ENDPOINT:-${RAG_INDEX_NAME:-${search:-}}}"
+  [[ -f "$root/phase10-vmhost/outputs.env" ]] && source "$root/phase10-vmhost/outputs.env" && console="${RMASSIST_URL:-}"
   cat <<EOF
 
 $(printf '\033[1;36m========== Contoso Retail RM Assist — Rakesh Sharma ==========\033[0m')
+  Core Banking + CRM Console: ${console:-not deployed yet}
   CRM Dashboard:             ${dash:-not deployed yet}
   Video Assist (Step 7):     ${videoassist:-not deployed yet}
   Step 7 launch pattern:     ${videoassist:+$videoassist/?customer_id=$DEFAULT_CUSTOMER_ID}

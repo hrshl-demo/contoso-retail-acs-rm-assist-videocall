@@ -101,6 +101,23 @@ result so future builds reuse it; **`build.sh --regenerate-data`** forces a full
 with retries, and **verifies no residue** — `tools/az-clean-slate.sh` is the belt-and-suspenders
 purge+verify helper.
 
+### Core Banking + CRM console (single pane of glass)
+
+The generated dataset isn't just files — it's presented the way an Indian bank's staff would actually
+see it. **`corebank-console/`** is a zero-dependency static SPA (a Finacle-style core-banking view
+fused with a Dynamics/CRM-Next-style CRM) that renders `data/contosobank/contosobank_dataset.json`
+with a **tab per Business Unit** — *Enterprise Overview*, *Retail Banking*, *Business Banking (MSME)*
+and *Corporate & Institutional* — each showing its RM, portfolio and a full **customer 360**
+(accounts & balances, transaction ledger, credit/facilities/collateral/covenants, CRM interactions,
+opportunities, service tickets, investments, trade finance, documents and a 6-month relationship arc),
+with Indian-format currency (lakh/crore) and IFSC/PAN/GST identifiers.
+
+It is served **on the same phase-10 VM, behind the reusable Caddy + Let's Encrypt TLS host** at
+`https://rmassist.<ip>.nip.io/`. During a build, `tools/deploy-console-on-vm.sh` syncs the console +
+the freshly generated dataset into the VM's webroot (`/opt/rmx/web/`), so it is reused across rebuilds
+just like the data and the cert. Skip it with `SKIP_CONSOLE=1`. Preview locally by serving the repo and
+opening `corebank-console/index.html?data=/data/contosobank/contosobank_dataset.json`.
+
 ### The 4-script model
 
 ```bash
@@ -112,7 +129,8 @@ bash wipe.sh --delete-rg        # after demo — FULL PURGE of the billable RG (
 ```
 
 Useful knobs: `SKIP_VMHOST=1` (skip the VM/cert/data-gen entirely), `SKIP_DATAGEN=1` (bring the VM up
-but don't regenerate), `COMMIT_ARTIFACTS=0` (don't auto-commit/push), `LETSENCRYPT_STAGING=1` (mint from
+but don't regenerate), `SKIP_CONSOLE=1` (don't deploy the Core Banking + CRM console),
+`COMMIT_ARTIFACTS=0` (don't auto-commit/push), `LETSENCRYPT_STAGING=1` (mint from
 the LE staging CA while testing). See `infra/common/env.sh` §5b for the persistent/VM/cert config.
 
 ---
@@ -456,12 +474,16 @@ infra/
   phase5-rag         index SOPs into AI Search  (Python)
   phase6-crm         CRM cockpit dashboard container app  (Bicep)
   phase9-videoassist Video Assist live-call container app  (az cli)
+  phase10-vmhost     data-gen + Caddy/TLS Ubuntu VM (Bicep + cloud-init)  [static IP, Let's Encrypt, keyless gpt-5.4]
+  persistent/        never-wiped static IP + reusable cert anchor  (build_persistent.sh)
   rebuild-parallel.sh / wipe-parallel.sh
 backend/             FastAPI Tool API (app/, Dockerfile, requirements.txt)
 frontend-crm/        CRM dashboard (html/, nginx/, Dockerfile)
 videoassist/         Live video-call + nudge app (Node/Vite; server.js, nudge-engine.js, client/)
-data/                Synthetic CSVs + knowledge base
+corebank-console/    Core Banking + CRM single-pane console (static SPA) — index.html, assets/{styles.css,app.js}
+data/                Synthetic CSVs + knowledge base + data/contosobank/ (generated dataset + generators)
 docs/sop/            Policy SOPs (RAG source) + demo transcripts
+tools/               generate_sops.py · ensure-baseline.sh · run-generation-on-vm.sh · deploy-console-on-vm.sh · commit-artifacts.sh
 ```
 
 ---

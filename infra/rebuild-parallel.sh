@@ -183,6 +183,14 @@ if [[ "${SKIP_VMHOST:-0}" != "1" ]]; then
   else
     warn "SKIP_DATAGEN=1 — VM is up but data/SOP generation was skipped."
   fi
+
+  # Deploy the static Core Banking & CRM console + dataset to the VM's Caddy webroot so it is
+  # served over the reusable TLS host. Runs whenever the VM is up (independent of SKIP_DATAGEN);
+  # the dataset is either freshly generated above or the committed baseline. SKIP_CONSOLE=1 skips.
+  if [[ "${SKIP_CONSOLE:-0}" != "1" ]]; then
+    log "Deploying Core Banking & CRM console to the VM (served over TLS)..."
+    bash "$SCRIPT_DIR/../tools/deploy-console-on-vm.sh" || warn "Console deploy failed — TLS host still serves the placeholder page."
+  fi
 else
   warn "SKIP_VMHOST=1 — skipping the data-gen/Caddy VM (phase10), the persistent layer and data generation."
   # phase4 still needs to come up for the app pipeline.

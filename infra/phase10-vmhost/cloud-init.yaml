@@ -37,8 +37,21 @@ write_files:
           acme_ca __ACME_CA__
       }
       __RMASSIST_HOST__ {
-          respond "Contoso Bank RM Assist — TLS OK (Caddy + Let's Encrypt)" 200
+          encode gzip
+          root * /opt/rmx/web
+          file_server
       }
+
+  - path: /opt/rmx/web/index.html
+    permissions: '0644'
+    content: |
+      <!doctype html><meta charset="utf-8">
+      <title>Contoso Bank RM Assist</title>
+      <body style="font-family:system-ui;margin:60px">
+      <h2>Contoso Bank RM Assist — TLS OK</h2>
+      <p>Caddy + Let's Encrypt is serving. The Core Banking &amp; CRM console is deployed here by
+      <code>tools/deploy-console-on-vm.sh</code> during the build.</p>
+      </body>
 
   - path: /opt/rmx/README.txt
     permissions: '0644'
@@ -57,6 +70,8 @@ runcmd:
   - pip3 install --no-cache-dir --upgrade azure-identity openai
   # Generation workspace owned by the admin user (SSH sync target).
   - mkdir -p /opt/rmx/workspace
+  # Static webroot for the Core Banking & CRM console (populated by deploy-console-on-vm.sh).
+  - mkdir -p /opt/rmx/web/data
   - chown -R __ADMIN_USER__:__ADMIN_USER__ /opt/rmx
   # Hand cert-store control to up.sh: stop + disable Caddy so it does NOT mint a cert before
   # up.sh has had the chance to pre-seed the committed one.

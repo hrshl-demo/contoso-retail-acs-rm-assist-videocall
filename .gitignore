@@ -22,5 +22,21 @@ __pycache__/
 *.sha256
 *.log
 
+# --- Data-gen VM (phase10) — never commit the SSH private key; keep rendered cloud-init out ---
+# The keypair normally lives in $HOME/.ssh (outside the repo); these patterns are belt-and-braces
+# in case VM_SSH_KEY_DIR is ever pointed inside the tree.
+**/rmx_vm_host
+**/rmx_vm_host.pub
+.ssh/rmx_vm_host*
+infra/phase10-vmhost/.cloud-init.rendered.yaml
+
+# --- Committed cert (infra/cert/) IS tracked on purpose -------------------------------------
+# The reusable Let's Encrypt cert store (caddy-data.tgz, .tgz — NOT matched by *.tar.gz above)
+# and CERT_FROZEN are committed so every build reuses the cert with no ACME call. Force-keep
+# them even if a broad *.tgz rule is added later.
+!infra/cert/
+!infra/cert/caddy-data.tgz
+!infra/cert/CERT_FROZEN
+
 # OS junk
 .DS_Store

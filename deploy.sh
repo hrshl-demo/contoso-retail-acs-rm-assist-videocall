@@ -55,12 +55,10 @@ find infra videoassist -type f -name '*.sh' -exec chmod +x {} + 2>/dev/null || t
 # shellcheck disable=SC1091
 source infra/common/env.sh
 
-if ! az account show >/dev/null 2>&1; then
-  az login --use-device-code
-fi
-
-echo "Active Azure context:"
-az account show --query '{Subscription:name,SubscriptionId:id,TenantId:tenantId}' --output table
+# Azure login + subscription are already configured in the environment (e.g. the jump VM).
+# We only pin the target subscription for az commands in THIS process — no 'az login',
+# no 'az account show'.
+[[ -n "${AZ_SUBSCRIPTION_ID:-}" ]] && az account set --subscription "$AZ_SUBSCRIPTION_ID" >/dev/null 2>&1 || true
 
 echo
 echo "Target resource group: $AZ_RG ($AZ_REGION)   [CREATED by this build — all-or-nothing]"

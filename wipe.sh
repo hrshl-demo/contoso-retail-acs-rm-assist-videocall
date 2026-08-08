@@ -27,32 +27,26 @@ cd "$ROOT_DIR"
 
 usage() {
   cat <<'USAGE'
-Usage: bash wipe.sh [--type=ptu|payg] [--delete-rg]
+Usage: bash wipe.sh [--delete-rg]
   (default)     tear down the billable stack; KEEP the resource group + Phase-1 platform.
-  --delete-rg   FULL teardown: delete the entire resource group (foundation included).
-  --type=ptu|payg  accepted for symmetry with build.sh; does not change what is deleted.
+  --delete-rg   FULL PURGE: delete the entire resource group (foundation + VM included), purge
+                soft-deleted Cognitive Services accounts, and verify no residue. The persistent
+                RG (static IP + committed cert) is NEVER touched.
 USAGE
 }
 
 # ---- CLI args -------------------------------------------------------------------------
-# --type=ptu|payg is accepted for symmetry with build.sh but does NOT change the wipe.
-# --delete-rg switches to the FULL all-or-nothing teardown (delete the whole RG).
-DEPLOY_TYPE="${DEPLOY_TYPE:-ptu}"
+# --delete-rg switches to the FULL all-or-nothing purge (delete the whole RG + verify).
+# (--type=ptu|payg is accepted-but-ignored for backward compatibility with the old 3-script model.)
 CLI_DELETE_RG=""
 for arg in "$@"; do
   case "$arg" in
-    --type=*)     DEPLOY_TYPE="${arg#*=}" ;;
-    --type)       echo "Use '--type=ptu' or '--type=payg' (with '=')." >&2; exit 2 ;;
     --delete-rg)  CLI_DELETE_RG="1" ;;
+    --type=*|--type) echo "note: --type is obsolete (chat model is always gpt-5.4 GlobalStandard) — ignoring." >&2 ;;
     -h|--help)    usage; exit 0 ;;
     *)            echo "Unknown argument: $arg" >&2; usage >&2; exit 2 ;;
   esac
 done
-case "$DEPLOY_TYPE" in
-  ptu|payg) ;;
-  *) echo "Invalid --type '$DEPLOY_TYPE' (expected 'ptu' or 'payg')." >&2; exit 2 ;;
-esac
-export DEPLOY_TYPE
 
 # New default = keep the RG + Phase-1 platform (the foundation build_rg.sh created).
 # --delete-rg (or an explicit WIPE_DELETE_RG=1 in the environment) forces the full wipe.

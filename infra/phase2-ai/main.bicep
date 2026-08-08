@@ -32,6 +32,9 @@ param searchLocation string = location
 @description('Region for the standalone Speech (SpeechServices) account. southindia does not offer the standalone SpeechServices kind, so this defaults independently (e.g. centralindia).')
 param speechLocation string = location
 
+@description('Region for the AI Foundry (AIServices) account + project. The gpt-5.4 GlobalStandard model must be deployable here; newer GPT-5 family models are not offered in every Indian region, so this defaults independently of the main region.')
+param aiServicesLocation string = location
+
 @description('Deterministic suffix for globally-unique names.')
 param suffix string
 
@@ -97,7 +100,7 @@ var commonTags = {
 // ====================== NEW: AI Foundry (AIServices) account + project ======================
 resource aiServices 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   name: aiServicesName
-  location: location
+  location: aiServicesLocation
   tags: commonTags
   kind: 'AIServices'
   sku: {
@@ -119,7 +122,7 @@ resource aiServices 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
 resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = {
   parent: aiServices
   name: foundryProjectName
-  location: location
+  location: aiServicesLocation
   tags: commonTags
   identity: {
     type: 'SystemAssigned'

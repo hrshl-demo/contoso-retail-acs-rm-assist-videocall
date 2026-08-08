@@ -1,0 +1,80 @@
+#cloud-config
+# infra/phase10-vmhost/cloud-init.yaml  (TEMPLATE)
+#
+# Rendered by infra/phase10-vmhost/up.sh — the following placeholders are substituted before
+# the file is base64-encoded into the VM customData:
+#   __RMASSIST_HOST__      the stable host, e.g. rmassist.4.5.6.7.nip.io
+#   __LETSENCRYPT_EMAIL__  ACME registration email
+#   __ACME_CA__            the ACME directory URL (production or staging)
+#   __ADMIN_USER__         the VM admin user (owns the generation workspace)
+#
+# It installs Caddy + Python + the keyless Azure OpenAI client deps, writes the Caddyfile, and
+# then STOPS + DISABLES Caddy so up.sh can pre-seed the committed certificate BEFORE Caddy ever
+# starts (which is what prevents an unwanted Let's Encrypt HTTP-01 call on a reused cert).
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - debian-keyring
+  - debian-archive-keyring
+  - apt-transport-https
+  - curl
+  - gnupg
+  - python3
+  - python3-pip
+  - python3-venv
+  - git
+  - jq
+  - rsync
+
+write_files:
+  - path: /etc/caddy/Caddyfile
+    permissions: '0644'
+    content: |
+      {
+          email __LETSENCRYPT_EMAIL__
+          acme_ca __ACME_CA__
+      }
+      __RMASSIST_HOST__ {
+          encode gzip
+          root * /opt/rmx/web
+          file_server
+      }
+
+  - path: /opt/rmx/web/index.html
+    permissions: '0644'
+    content: |
+      <!doctype html><meta charset="utf-8">
+      <title>Contoso Bank RM Assist</title>
+      <body style="font-family:system-ui;margin:60px">
+      <h2>Contoso Bank RM Assist — TLS OK</h2>
+      <p>Caddy + Let's Encrypt is serving. The Core Banking &amp; CRM console is deployed here by
+      <code>tools/deploy-console-on-vm.sh</code> during the build.</p>
+      </body>
+
+  - path: /opt/rmx/README.txt
+    permissions: '0644'
+    content: |
+      Contoso Bank RM Assist — data-generation + Caddy host.
+      Generation workspace is synced here over SSH by tools/run-generation-on-vm.sh.
+      gpt-5.4 access is keyless via this VM's system-assigned managed identity.
+
+runcmd:
+  # --- Caddy (official stable apt repo) ---
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+  - apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y caddy
+  # Keyless Azure OpenAI client deps for the generation scripts (managed-identity via IMDS).
+  - pip3 install --no-cache-dir --upgrade azure-identity openai
+  # Generation workspace owned by the admin user (SSH sync target).
+  - mkdir -p /opt/rmx/workspace
+  # Static webroot for the Core Banking & CRM console (populated by deploy-console-on-vm.sh).
+  - mkdir -p /opt/rmx/web/data
+  - chown -R __ADMIN_USER__:__ADMIN_USER__ /opt/rmx
+  # Hand cert-store control to up.sh: stop + disable Caddy so it does NOT mint a cert before
+  # up.sh has had the chance to pre-seed the committed one.
+  - systemctl stop caddy || true
+  - systemctl disable caddy || true
+  - touch /opt/rmx/cloud-init-done

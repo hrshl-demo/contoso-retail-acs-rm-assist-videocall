@@ -134,6 +134,124 @@ function animateCounters(scope){
 function skelCards(n){ let s=""; for(let i=0;i<(n||3);i++){ s+=`<div class="skel-card"><div class="skel skel-line" style="width:42%"></div><div class="skel skel-line" style="width:88%"></div><div class="skel skel-line" style="width:70%"></div></div>`; } return s; }
 function skelKpis(){ return `<div class="skel-row">${Array(4).fill('<div class="skel skel-card" style="height:78px"></div>').join("")}</div>`; }
 
+/* Skeleton for a tool-API fetch that previously rendered a plain text
+   `<div class="loading">`. Same wording, but the shape of what is coming is
+   visible while it loads. */
+function skelPanel(label, lines){
+  const n = lines || 3;
+  let rows = '';
+  for(let i=0;i<n;i++){
+    const w = [92, 78, 64, 84, 70][i % 5];
+    rows += `<div class="skel skel-line" style="width:${w}%"></div>`;
+  }
+  return `<div class="rx-skel-panel" role="status" aria-live="polite">
+    <div class="rx-skel-head"><span class="rx-spin" aria-hidden="true"></span><span>${esc(label||'Loading…')}</span></div>
+    <div class="rx-skel-body">${rows}</div></div>`;
+}
+function skelInto(el, label, lines){
+  const node = typeof el === 'string' ? $(el) : el;
+  if(node) node.innerHTML = skelPanel(label, lines);
+}
+
+/* ---------- token-by-token reveal for AI narration ----------
+   The text is already fully in hand; revealing it word-by-word makes the
+   grounded narration read as generated rather than pasted. Falls back to an
+   instant set when the user prefers reduced motion. */
+const RX_REDUCED_MOTION = (function(){
+  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch(e){ return false; }
+})();
+function rxStreamText(el, text, opts){
+  const node = typeof el === 'string' ? $(el) : el;
+  if(!node) return Promise.resolve();
+  const full = String(text||'');
+  opts = opts || {};
+  if(RX_REDUCED_MOTION || !full){ node.textContent = full; return Promise.resolve(); }
+  if(node.__rxStreamStop){ node.__rxStreamStop(); }
+  const tokens = full.split(/(\s+)/);
+  const perTick = Math.max(1, Math.ceil(tokens.length / Math.max(8, Math.min(90, opts.ticks || 46))));
+  node.textContent = '';
+  node.classList.add('rx-streaming');
+  let i = 0, timer = 0, done = false;
+  return new Promise((resolve)=>{
+    const stop = () => { if(done) return; done = true; clearInterval(timer); node.classList.remove('rx-streaming'); node.textContent = full; resolve(); };
+    node.__rxStreamStop = stop;
+    timer = setInterval(()=>{
+      if(i >= tokens.length){ stop(); return; }
+      node.textContent += tokens.slice(i, i+perTick).join('');
+      i += perTick;
+    }, opts.intervalMs || 26);
+  });
+}
+// Stream every [data-rx-stream] node inside a freshly rendered scope.
+function rxStreamScope(scope){
+  const root = typeof scope === 'string' ? $(scope) : (scope || document);
+  if(!root || !root.querySelectorAll) return;
+  root.querySelectorAll('[data-rx-stream]').forEach((el, idx)=>{
+    const text = el.getAttribute('data-rx-stream');
+    if(text == null) return;
+    el.removeAttribute('data-rx-stream');
+    setTimeout(()=>rxStreamText(el, text), idx * 120);
+  });
+}
+
+/* ---------- live-nudge cue (sound + Notification) ----------
+   Driven by the Phase 2 SSE channel. Only fires when the cockpit tab is NOT
+   focused, so it never interrupts an RM who is already looking at the screen. */
+const RX_CUE = { enabled:true, ctx:null, lastAt:0 };
+function rxCueSound(){
+  if(!RX_CUE.enabled || RX_REDUCED_MOTION) return;
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    const ctx = RX_CUE.ctx || (RX_CUE.ctx = new AC());
+    if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
+    // Two short sine blips — synthesised, so there is no audio asset to ship.
+    [0, 0.13].forEach((offset, i)=>{
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = i === 0 ? 784 : 1046;   // G5 -> C6
+      const t0 = ctx.currentTime + offset;
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.09, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(t0); osc.stop(t0 + 0.13);
+    });
+  }catch(e){}
+}
+function rxRequestNotifyPermission(){
+  try{
+    if(typeof Notification === 'undefined' || Notification.permission !== 'default') return;
+    Notification.requestPermission().catch(()=>{});
+  }catch(e){}
+}
+// Called by RXI.put() for every insight that arrives on the SSE channel.
+window.rxNotifyInsight = function(entry){
+  if(!entry || entry.kind !== 'live_nudge') return;
+  const now = Date.now();
+  if(now - RX_CUE.lastAt < 1500) return;      // de-dupe replay bursts
+  RX_CUE.lastAt = now;
+  if(!document.hidden) return;                // RM is already watching
+  rxCueSound();
+  try{
+    if(typeof Notification !== 'undefined' && Notification.permission === 'granted'){
+      const n = new Notification(entry.headline || 'Live nudge', {
+        body: (entry.body || '').slice(0, 180),
+        tag: entry.eventId, renotify: false,
+      });
+      n.onclick = ()=>{ try{ window.focus(); openInsight(entry); n.close(); }catch(e){} };
+    }
+  }catch(e){}
+};
+// Jump straight to the newest live nudge (command palette + Notification click).
+function openLatestNudge(){
+  const latest = RXI.latest || RXI.cache.get([...RXI.order].reverse().find(id=>{
+    const e = RXI.cache.get(id); return e && e.kind === 'live_nudge';
+  }));
+  if(latest) return openInsight(latest);
+  RX.toast('No live nudge captured yet in this session.');
+}
+
 /* ============================================================================
    LIVE INSIGHT DEEP LINK — Teams nudge → this cockpit's detail drawer.
 
@@ -195,6 +313,8 @@ const RXI = {
     return entry;
   },
 };
+// `const` does not attach to window, and ui.js's command palette reads it defensively.
+window.RXI = RXI;
 
 const RXI_KIND_LABEL = { live_nudge:'Live nudge', answer:'Grounded answer', synopsis:'Pre-call synopsis', case_logged:'CRM case registered' };
 
@@ -224,7 +344,7 @@ function openInsight(entry, opts = {}){
 
   const sections = [];
   if(entry.trigger) sections.push({label:'What the customer said', html:`<div class="rx-block why">&ldquo;${esc(entry.trigger)}&rdquo;</div>`});
-  if(entry.body) sections.push({label:'The insight', html:`<div class="rx-block why">${esc(entry.body)}</div>`});
+  if(entry.body) sections.push({label:'The insight', html:`<div class="rx-block why" data-rx-stream="${esc(entry.body)}"></div>`});
   if(entry.say) sections.push({label:'Say to the customer', html:`<div class="rx-block say">&ldquo;${esc(entry.say)}&rdquo;</div>`});
   if(entry.basis) sections.push({label:'Policy basis (internal)', html:`<div class="rx-block basis">${esc(entry.basis)}</div>`});
   if(entry.extra && entry.extra.risks && entry.extra.risks.length) sections.push({label:'Risks & issues', html:`<div class="rx-block dont">${entry.extra.risks.map(esc).join('<br>')}</div>`});
@@ -256,6 +376,8 @@ function openInsight(entry, opts = {}){
     subtitle: `${entry.customerName || cid || ''}${entry.turnId ? ` · turn ${entry.turnId}` : ''}`,
     badges, sections, actions,
   });
+  // Reveal the narration token-by-token so the drawer reads as generated.
+  try{ rxStreamScope(RX.drawer._el); }catch(e){}
 }
 
 // Drill to the leaf rows the insight was computed from — reuses the Tool API
@@ -344,6 +466,9 @@ async function boot() {
   }
   await loadQueue();
   const route = insightRoute();
+  // The Notification API needs a user gesture before it will prompt, so we ask
+  // on the RM's first interaction rather than on load.
+  ['pointerdown','keydown'].forEach(ev=>document.addEventListener(ev, rxRequestNotifyPermission, { once:true }));
   // Warm the insight cache for this customer (or all customers) before the RM clicks.
   RXI.connect(route.customer || null);
   if(route.customer){
@@ -691,6 +816,12 @@ function renderCustomer(d, ds, pb, cmd = null) {
         <div class="eyebrow">${esc(c.customer_id)} · ${esc(c.constitution)} · ${esc(c.home_branch_code)}</div>
         <h2>${esc(c.display_name)}</h2>
         <p>${esc(p.industry_description)} · since ${esc(c.customer_since)} · ${esc(p.operating_locations)} · consent ${esc(c.consent_status)}</p>
+        <div class="rx-hero-stats">
+          <span><b data-count="${Number(ds.summary_metrics.total_credits_inr)/1e7}" data-prefix="₹" data-suffix=" Cr" data-dec="2">₹0</b> credits FY</span>
+          <span><b data-count="${Number(cs.avg_utilization_pct)||0}" data-suffix="%" data-dec="1">0%</b> avg utilisation</span>
+          <span><b data-count="${Number((d.bureau&&d.bureau.score)||(ds.summary_metrics&&ds.summary_metrics.bureau_score)||0)}">0</b> bureau score</span>
+          <span><b data-count="${Number(ds.summary_metrics.open_tasks)||0}">0</b> open tasks</span>
+        </div>
       </div>
       <div class="modeswitch" role="tablist">
         <button class="ms-btn active" id="ms-core" onclick="setMode('core')"><span class="ic">▤</span> Core CRM</button>
@@ -700,6 +831,7 @@ function renderCustomer(d, ds, pb, cmd = null) {
     <div id="modebody"></div>
     <section class="panel" id="memoPanel" style="display:none;margin-top:16px"><h3>Renewal Memo · Draft</h3><div id="memoBody"></div></section>
   `;
+  animateCounters($("content"));
   setMode('core');
 }
 
@@ -719,15 +851,15 @@ function renderCoreMode(){
   $("modebody").innerHTML = `
     <div class="core-banner"><span class="ic">▤</span> <b>Core banking CRM</b> — system-of-record. This is the customer exactly as the branch sees them today: master data, accounts, transactions, cases and documents. <b>No AI applied.</b></div>
     <div class="kpi-row">
-      <div class="kpi"><span>Sanctioned limit</span><strong>${fmtINR(f.sanction_limit_inr)}</strong><em>${esc(f.facility_type||'Working capital')}</em></div>
+      <div class="kpi"><span>Sanctioned limit</span><strong data-count="${Number(f.sanction_limit_inr)/1e5}" data-prefix="₹" data-suffix=" L" data-dec="2">₹0</strong><em>${esc(f.facility_type||'Working capital')}</em></div>
       <div class="kpi"><span>Credits FY</span><strong data-count="${Number(ds.summary_metrics.total_credits_inr)/1e7}" data-prefix="₹" data-suffix=" Cr" data-dec="2">₹0</strong><em>raw account turnover</em></div>
       <div class="kpi"><span>Open tasks</span><strong><span data-count="${ds.summary_metrics.open_tasks}">0</span></strong><em>${ds.summary_metrics.open_service_tickets} service ticket(s)</em></div>
       <div class="kpi"><span>Avg utilization</span><strong data-count="${cs.avg_utilization_pct}" data-suffix="%">0%</strong><em>peak ${cs.peak_utilization_pct}%</em></div>
     </div>
-    <section class="panel" id="rawFactsPanel" style="margin-top:16px"><h3>Raw facts on file <span class="muted">— the data as it sits in the CRM, no insight applied</span></h3><div id="rawFactsBody"><div class="loading">Reading the record…</div></div></section>
+    <section class="panel" id="rawFactsPanel" style="margin-top:16px"><h3>Raw facts on file <span class="muted">— the data as it sits in the CRM, no insight applied</span></h3><div id="rawFactsBody">${skelPanel("Reading the record\u2026", 4)}</div></section>
     <section class="panel call-records-panel" id="callRecordsPanel" style="margin-top:16px">
       <div class="call-records-head"><div><h3>Teams call transcripts &amp; AI record</h3><p>Post-call transcript, AI answers, nudges and CRM actions. Downloadable for downstream Work IQ demonstrations.</p></div><span class="call-live-pill">POST-CALL RECORD</span></div>
-      <div id="callRecordsBody"><div class="loading">Checking for completed call records…</div></div>
+      <div id="callRecordsBody">${skelPanel("Checking for completed call records\u2026", 2)}</div>
     </section>
     <nav class="tabs" id="tabs">
       <button class="tab active" data-tab="relationship" onclick="switchTab('relationship')">Cases &amp; Timeline</button>
@@ -1023,7 +1155,7 @@ function renderCommandCockpit(cmd){
       <div class="thesis-card">
         <div class="eyebrow">Relationship thesis · AI command cockpit</div>
         <h3>${esc(cmd.relationship_thesis)}</h3>
-        <div id="dynThesis" class="dyn-thesis"><div class="loading">Generating live relationship thesis…</div></div>
+        <div id="dynThesis" class="dyn-thesis">${skelPanel("Generating live relationship thesis\u2026", 5)}</div>
         <div class="evidence-row">${(cmd.evidence_refs||[]).map(x=>`<span class="evidence-chip">${esc(x)}</span>`).join('')}</div>
       </div>
       <div class="readiness-card">
@@ -1045,7 +1177,7 @@ function renderCommandCockpit(cmd){
 const TABS = {
   playbook: (d,ds,pb,cid)=>`
     <section class="panel spotlight"><h3>AI RM Playbook <span class="muted" id="pbMode">generating live…</span></h3>
-      <div id="aiPlaybook"><div class="loading">Generating today's conversation playbook…</div></div>
+      <div id="aiPlaybook">${skelPanel("Generating today\u2019s conversation playbook\u2026", 4)}</div>
     </section>
     <section class="panel"><h3>Structured Talk Tracks (deterministic)</h3>${renderPlaybook(pb)}</section>`,
   personas: (d,ds,pb,cid)=>`
@@ -1135,7 +1267,7 @@ let PERSONA_PATHS = null;
 async function loadPersona(cid, sid, who){
   const ev = window.event;
   $("personaWho").textContent = '· ' + who + ' · simulating conversations live…';
-  $("personaNarrative").innerHTML = `<div class="loading">Simulating 3 grounded conversation paths — happy, neutral and friction…</div>`;
+  $("personaNarrative").innerHTML = skelPanel("Simulating 3 grounded conversation paths \u2014 happy, neutral and friction\u2026", 5);
   document.querySelectorAll(".ptnode").forEach(n=>n.classList.remove("sel"));
   if(ev && ev.currentTarget) ev.currentTarget.classList.add("sel");
   try{
@@ -1280,7 +1412,7 @@ function useExample(btn, cid){ const q=$("ragQ"); if(q){ q.value = btn.textConte
 async function runSearch(cid){
   const q = $("ragQ").value.trim(); if(!q){ return; }
   cid = cid || CURRENT || null;
-  $("ragResults").innerHTML = `<div class="ai-answer-box"><div class="loading">Reading this customer's data + policy and reasoning…</div></div>`;
+  $("ragResults").innerHTML = `<div class="ai-answer-box">${skelPanel("Reading this customer's data + policy and reasoning\u2026", 4)}</div>`;
   // 1) the grounded AI answer over customer data (PII-masked) + SOPs — the real RM-assist
   let aiHtml = '';
   if(cid){
@@ -1316,7 +1448,7 @@ async function runSearch(cid){
 /* ---- Call Plan & Objection Prep (mounted in the journey, step 5) ---- */
 async function mountCallPlan(mountId, cid){
   const mount = $(mountId); if(!mount) return;
-  mount.innerHTML = `<div class="loading">Building your pre-call game plan with the gated strategy…</div>`;
+  mount.innerHTML = skelPanel("Building your pre-call game plan with the gated strategy\u2026", 5);
   try{
     const nba = await getNBA(cid);
     const plays = (nba.plays||[]).filter(p=>p.eligibility!=='blocked');
@@ -1405,7 +1537,7 @@ async function renderMilo(){
     const snap = (m.yesterday_snapshot||[]).map(x=>`
       <div class="milo-metric"><span>${esc(x.metric)}</span><b data-count="${x.yesterday}">0</b><em>avg ${x.trailing_avg} ${arrow(x.trend)}</em></div>`).join("");
     $("plannerBody").innerHTML = `
-      <div id="miloAi" class="dilo-ai"><div class="loading">Reading your portfolio performance…</div></div>
+      <div id="miloAi" class="dilo-ai">${skelPanel("Reading your portfolio performance\u2026", 4)}</div>
       <div class="kpi-row">
         <div class="kpi"><span>SLA adherence</span><strong data-count="${m.sla.adherence_pct}" data-suffix="%">0%</strong><em>${m.sla.met}/${m.sla.due} met</em></div>
         <div class="kpi"><span>Calls (period)</span><strong data-count="${m.period_totals.calls_made}">0</strong><em>${m.period_days} working days</em></div>
@@ -1427,7 +1559,7 @@ async function renderMilo(){
 /* ---- marketing collateral (customer-level, used in the RM Assist journey) ---- */
 async function loadCollateral(cid, mountId){
   const mount = $(mountId); if(!mount) return;
-  mount.innerHTML = `<div class="loading">Loading marketable offers…</div>`;
+  mount.innerHTML = skelPanel("Loading marketable offers\u2026", 4);
   try{
     const o = await api(`/v1/customers/${cid}/offers`);
     const offers = (o.offers||[]);
@@ -1442,7 +1574,7 @@ async function loadCollateral(cid, mountId){
 }
 async function genEmail(cid, pid, btn){
   document.querySelectorAll(".offer-chip").forEach(b=>b.classList.remove("sel")); if(btn) btn.classList.add("sel");
-  $("emailOut").innerHTML = `<div class="loading">Drafting a detailed, personalised outreach + RM sell-sheet…</div>`;
+  $("emailOut").innerHTML = skelPanel("Drafting a detailed, personalised outreach + RM sell-sheet\u2026", 6);
   try{
     const e = await api(`/v1/customers/${cid}/collateral-pack?product_id=${encodeURIComponent(pid)}`);
     if(e.gated){ $("emailOut").innerHTML = `<div class="narr-donot"><b>Outreach suppressed.</b> ${esc(e.gate_reason||'')}</div>`; return; }
@@ -1489,7 +1621,7 @@ async function loadMissionAction(cid, title, kind, idx){
 }
 async function loadDynamicThesis(cid){
   const box = $("dynThesis"); if(!box) return;
-  box.innerHTML = `<div class="loading">Generating live relationship thesis…</div>`;
+  box.innerHTML = skelPanel("Generating live relationship thesis\u2026", 5);
   try{
     const t = await api(`/v1/customers/${cid}/thesis`);
     THESIS_DATA = t;
@@ -1522,15 +1654,18 @@ function revealFacet(k, btn){
   document.querySelectorAll(".thesis-facets .facet-chip").forEach(b=>{ if(btn) b.classList.toggle("on", b===btn); });
   const stage = $("facetStage"); if(!stage) return;
   let html = '';
-  if(k==='thesis') html = `<p class="th-body reveal">${esc(t.thesis||'')}</p>`;
-  else if(k==='why_now') html = `<p class="th-why reveal"><b>Why now:</b> ${esc(t.why_now||'')}</p>`;
-  else if(k==='risk_read') html = `<div class="th-risk reveal"><b>Most pressing risk</b> ${esc(t.risk_read||'')}</div>`;
-  else if(k==='opportunity_read') html = `<div class="th-opp reveal"><b>Where the upside is</b> ${esc(t.opportunity_read||'')}</div>`;
+  // Narration bodies carry data-rx-stream so rxStreamScope() reveals them
+  // token-by-token instead of popping in fully formed.
+  if(k==='thesis') html = `<p class="th-body reveal" data-rx-stream="${esc(t.thesis||'')}"></p>`;
+  else if(k==='why_now') html = `<p class="th-why reveal"><b>Why now:</b> <span data-rx-stream="${esc(t.why_now||'')}"></span></p>`;
+  else if(k==='risk_read') html = `<div class="th-risk reveal"><b>Most pressing risk</b> <span data-rx-stream="${esc(t.risk_read||'')}"></span></div>`;
+  else if(k==='opportunity_read') html = `<div class="th-opp reveal"><b>Where the upside is</b> <span data-rx-stream="${esc(t.opportunity_read||'')}"></span></div>`;
   else if(k==='top_actions'){
     const actions = (t.top_actions||[]).map((a,i)=>`<div class="th-act u-${String(a.urgency||'').toLowerCase()}" style="animation-delay:${i*0.08}s"><span class="th-act-n">${i+1}</span><div><b>${esc(a.action||'')}</b><span>${esc(a.rationale||'')}</span></div>${a.urgency?`<em class="th-act-u">${esc(a.urgency)}</em>`:''}</div>`).join('');
     html = `<div class="th-actions reveal"><div class="er-label">AI-sequenced — do these in order</div>${actions}</div>`;
   }
   stage.innerHTML = html;
+  rxStreamScope(stage);
 }
 
 /* ===================== BREACH RADAR ===================== */
@@ -1541,7 +1676,7 @@ async function loadBreachRadar(cid){
     const snap = await api(`/v1/customers/${cid}/breach-radar`);
     BR_STATE = snap;
     if($("brBand")) $("brBand").textContent = snap.breach_band;
-    if($("brRadar")) { $("brRadar").innerHTML = `<div id="brAi" class="breach-ai"><div class="loading">Reading the trajectory…</div></div>` + renderBreachRadar(snap); animateCounters($("brRadar")); drawSparkline(snap.utilization_sparkline); }
+    if($("brRadar")) { $("brRadar").innerHTML = `<div id="brAi" class="breach-ai">${skelPanel("Reading the trajectory\u2026", 3)}</div>` + renderBreachRadar(snap); animateCounters($("brRadar")); drawSparkline(snap.utilization_sparkline); }
     // AI reading of the trajectory — the "what it means + the play"
     try{
       const bi = await api(`/v1/customers/${cid}/breach-intelligence`);
@@ -1659,20 +1794,52 @@ function renderBreachRadar(s){
     <div class="disclaimer">⚠ ${esc(s.guardrail)}</div>`;
 }
 
-function drawSparkline(vals){
-  const svg = $("brSpark"); if(!svg || !vals || !vals.length) return;
-  const w=320, hgt=60, pad=4; const max=Math.max(...vals,100), min=Math.min(...vals,0);
+/* ---------- reusable sparkline ----------
+   Generalised from the breach-radar sparkline (which was hardcoded to #brSpark)
+   so any element can get a trend line: balances, transaction amounts,
+   utilisation. Returns SVG markup; rxSpark() paints it into a target. */
+function rxSparklineSvg(vals, opts){
+  opts = opts || {};
+  const w = opts.w||320, hgt = opts.h||60, pad = 4;
+  const v = (vals||[]).map(Number).filter(x=>Number.isFinite(x));
+  if(v.length < 2) return '';
+  const stroke = opts.stroke || '#1b56d6';
+  const fillTop = opts.fillTop || 'rgba(27,86,214,.22)';
+  const max = Math.max(...v, opts.forceMax!=null?opts.forceMax:-Infinity);
+  const min = Math.min(...v, opts.forceMin!=null?opts.forceMin:Infinity);
   const rng = (max-min)||1;
-  const pts = vals.map((v,i)=>{ const x=pad+(i/(vals.length-1))*(w-2*pad); const y=hgt-pad-((v-min)/rng)*(hgt-2*pad); return [x,y]; });
+  const gid = 'rxg' + Math.random().toString(36).slice(2,8);
+  const pts = v.map((x,i)=>{ const px=pad+(i/(v.length-1))*(w-2*pad); const py=hgt-pad-((x-min)/rng)*(hgt-2*pad); return [px,py]; });
   const d = pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
   const area = d + ` L ${w-pad} ${hgt} L ${pad} ${hgt} Z`;
-  // warn line at 85
-  const warnY = hgt-pad-((85-min)/rng)*(hgt-2*pad);
-  svg.innerHTML = `
-    <defs><linearGradient id="brg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="rgba(27,86,214,.22)"/><stop offset="1" stop-color="rgba(27,86,214,0)"/></linearGradient></defs>
-    ${warnY>0&&warnY<hgt?`<line x1="0" y1="${warnY.toFixed(1)}" x2="${w}" y2="${warnY.toFixed(1)}" stroke="#c0322b" stroke-width="1" stroke-dasharray="3 3" opacity=".55"/>`:''}
-    <path d="${area}" fill="url(#brg)"/>
-    <path d="${d}" fill="none" stroke="#1b56d6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="stroke-dasharray:1400;stroke-dashoffset:1400;animation:brdash 1s ease forwards"/>`;
+  let guide = '';
+  if(opts.warnAt != null){
+    const wy = hgt-pad-((opts.warnAt-min)/rng)*(hgt-2*pad);
+    if(wy>0 && wy<hgt) guide = `<line x1="0" y1="${wy.toFixed(1)}" x2="${w}" y2="${wy.toFixed(1)}" stroke="#c0322b" stroke-width="1" stroke-dasharray="3 3" opacity=".55"/>`;
+  }
+  if(opts.zeroLine){
+    const zy = hgt-pad-((0-min)/rng)*(hgt-2*pad);
+    if(zy>0 && zy<hgt) guide += `<line x1="0" y1="${zy.toFixed(1)}" x2="${w}" y2="${zy.toFixed(1)}" stroke="#8a97a6" stroke-width="1" stroke-dasharray="2 3" opacity=".6"/>`;
+  }
+  const last = pts[pts.length-1];
+  return `<defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${fillTop}"/><stop offset="1" stop-color="rgba(27,86,214,0)"/></linearGradient></defs>`
+    + guide
+    + `<path d="${area}" fill="url(#${gid})"/>`
+    + `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="stroke-dasharray:1400;stroke-dashoffset:1400;animation:brdash 1s ease forwards"/>`
+    + (opts.dot===false?'':`<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3" fill="${stroke}"/>`);
+}
+// Paint into any <svg> element (by id or node).
+function rxSpark(target, vals, opts){
+  const svg = typeof target === 'string' ? $(target) : target;
+  if(!svg) return;
+  const markup = rxSparklineSvg(vals, opts);
+  if(!markup){ svg.innerHTML = ''; return; }
+  svg.innerHTML = markup;
+}
+// Backwards-compatible breach-radar sparkline (same visual as before).
+function drawSparkline(vals){
+  if(!vals || !vals.length) return;
+  rxSpark("brSpark", vals, { warnAt:85, forceMax:100, forceMin:0, dot:false });
 }
 
 function renderBreachSim(cid, s){
@@ -1805,7 +1972,7 @@ async function openBriefingDrilldown(cid, cardId, question='', silent=false){
   document.querySelectorAll('.brief-card').forEach(b=>b.classList.toggle('on', b.id === `brief-card-${cardId}`));
   const box = $("briefDrill");
   if(!box) return;
-  box.innerHTML = `<div class="drill-card"><div class="loading">Generating AI drilldown for ${esc(cardId)}…</div></div>`;
+  box.innerHTML = `<div class="drill-card">${skelPanel("Generating AI drilldown for " + esc(cardId) + "\u2026", 4)}</div>`;
   try{
     const r = await api(`/v1/customers/${cid}/briefing-drilldown?card_id=${encodeURIComponent(cardId)}&q=${encodeURIComponent(question||'')}&ts=${Date.now()}`);
     box.innerHTML = renderBriefingDrilldown(r);
@@ -1840,7 +2007,7 @@ function renderBriefingDrilldown(r){
 async function loadBreachIncomeCopilot(cid){
   const box = $("riskCopilot");
   if(!box) return;
-  box.innerHTML = `<div class="loading">Building AI Risk Control Tower…</div>`;
+  box.innerHTML = skelPanel("Building AI Risk Control Tower\u2026", 5);
   try{
     const r = await api(`/v1/customers/${cid}/breach-income-copilot?ts=${Date.now()}`);
     window.__RISK_COPILOT = r;
@@ -1886,7 +2053,7 @@ async function loadGamePlan(cid, btn){
   if(box.dataset.loaded){ box.classList.toggle("show"); btn.textContent = box.classList.contains("show")?"▾ Hide AI game plan":"▸ Generate AI game plan for this conversation"; return; }
   btn.textContent = "Generating live…"; btn.disabled = true;
   box.classList.add("show");
-  box.innerHTML = `<div class="loading">Generating game plan…</div>`;
+  box.innerHTML = skelPanel("Generating game plan\u2026", 4);
   try{
     const r = await api(`/v1/briefing/playbook/${cid}`);
     box.innerHTML = `<div class="gp-mode">${r.mode==='ai'?'live · AI':'fallback'}</div>` + renderPlaybookStruct(r.structured);
@@ -2152,7 +2319,7 @@ function openSuppressed(){
     sections:[{label:'Why these are not on the table now', html}] });
 }
 async function loadCrossSell(cid) { /* kept for backward compatibility */ }
-async function draftMemo(cid) { $("memoPanel").style.display = "block"; $("memoBody").innerHTML = `<div class="loading">Drafting evidence-cited memo…</div>`; try { const m = await api("/v1/memo/renewal-draft", { method: "POST", body: JSON.stringify({ customer_id: cid }) }); $("memoBody").innerHTML = m.sections.map(s => `<div class="memo-sec"><div class="st">${esc(s.section)}</div><div class="tx">${esc(s.text)}</div>${s.evidence_refs ? `<div class="refs">${s.evidence_refs.map(r => `<span class="ref">${esc(r)}</span>`).join("")}</div>` : ""}</div>`).join("") + `<div class="disclaimer">⚠ ${esc(m.disclaimer)}</div>`; refreshAudit(); toast("Memo drafted — logged to audit trail"); } catch (e) { $("memoBody").innerHTML = `<div class="loading">Failed: ${esc(e.message)}</div>`; } }
+async function draftMemo(cid) { $("memoPanel").style.display = "block"; $("memoBody").innerHTML = skelPanel("Drafting evidence-cited memo\u2026", 6); try { const m = await api("/v1/memo/renewal-draft", { method: "POST", body: JSON.stringify({ customer_id: cid }) }); $("memoBody").innerHTML = m.sections.map(s => `<div class="memo-sec"><div class="st">${esc(s.section)}</div><div class="tx">${esc(s.text)}</div>${s.evidence_refs ? `<div class="refs">${s.evidence_refs.map(r => `<span class="ref">${esc(r)}</span>`).join("")}</div>` : ""}</div>`).join("") + `<div class="disclaimer">⚠ ${esc(m.disclaimer)}</div>`; refreshAudit(); toast("Memo drafted — logged to audit trail"); } catch (e) { $("memoBody").innerHTML = `<div class="loading">Failed: ${esc(e.message)}</div>`; } }
 async function proposeTask(cid) { try { const cand = await api("/v1/crm/update-candidate", { method: "POST", body: JSON.stringify({ customer_id: cid, type: "task", payload: { title: "RM follow-up: collect pending documents and validate order pipeline", due: "2026-04-10", priority:"High" }, evidence_refs: ["documents", "crm.playbook"] }), }); refreshAudit(); if (confirm(`Proposed: "${cand.payload.title}"\n\nApprove and save to CRM?`)) { await api("/v1/crm/approve-update", { method: "POST", body: JSON.stringify({ candidate_id: cand.candidate_id, approver: "RM-1042" }) }); toast("Task approved & saved to CRM"); await selectCustomer(cid); } else { toast("Left pending — not saved"); } } catch (e) { toast("Write blocked: " + e.message); } }
 
 async function askPolicy() { const inp = $("chatIn"), q = inp.value.trim(); if (!q) return; inp.value = ""; const log = $("chatLog"); log.innerHTML += `<div class="msg u">${esc(q)}</div><div class="msg a" id="pending">…</div>`; log.scrollTop = log.scrollHeight; try { const r = await api("/v1/rag/retrieve", { method: "POST", body: JSON.stringify({ query: q, top_k: 3 }) }); const pend = $("pending"); pend.id = ""; if (r.grounded && r.results.length) { const top = r.results[0]; pend.innerHTML = `Per <strong>${esc(top.sop_title)}</strong> — ${esc(top.section_title)}:<br>${esc((top.content||"").replace(/^#+.*$/m,"").slice(0,260))}…<div class="cites">${r.results.map(x => `<span class="ref">${esc(x.sop_id)} · ${esc(x.section_title)}</span>`).join("")}</div>`; } else { pend.classList.add("notfound"); pend.innerHTML = `No matching Contoso policy found in indexed SOPs.`; } } catch (e) { const pend = $("pending"); pend.id = ""; pend.innerHTML = "Retrieval error: " + esc(e.message); } log.scrollTop = log.scrollHeight; }
@@ -2526,6 +2693,8 @@ function rdRenderProfile(p){
       <div><b>${rdINR(sp.total_credit_inr)}</b><span>total credits (inflows)</span></div>
       <div><b>${Number(sp.txn_count||0).toLocaleString('en-IN')}</b><span>transactions</span></div>
     </div>
+    ${(sp.recent||[]).length>2?`<div class="c360-sub">Transaction size trend <span class="rd-meta-dim">— latest ${(sp.recent||[]).length}, oldest to newest</span></div>
+    <svg id="rxSparkTxn" class="br-spark rx-spark" viewBox="0 0 320 60" preserveAspectRatio="none"></svg>`:''}
     <div class="c360-sub">Debit spend by category</div>${bars}`, true);
 
   // Recent transactions
@@ -2539,6 +2708,8 @@ function rdRenderProfile(p){
       <td class="num">${rdINR(t.balance_after_txn_inr)}</td>
     </tr>`).join('');
   const txCard = rd360Card('Recent transactions', 'latest 15', `
+    ${(sp.recent||[]).length>2?`<div class="c360-sub">Balance trend <span class="rd-meta-dim">— running balance across these transactions</span></div>
+    <svg id="rxSparkBal" class="br-spark rx-spark" viewBox="0 0 320 60" preserveAspectRatio="none"></svg>`:''}
     <table class="c360-tbl"><thead><tr><th>Date</th><th>Dr/Cr</th><th class="num">Amount</th><th>Category</th><th>Narration</th><th class="num">Balance</th></tr></thead>
     <tbody>${rtx}</tbody></table>`, true);
 
@@ -2584,7 +2755,7 @@ function rdRenderProfile(p){
     [c.transactions,'transactions'],[c.accounts,'accounts'],[c.facilities,'facilities'],
     [c.service_requests,'service requests'],[c.documents,'documents'],[c.cheque_returns,'bounces'],
     [c.opportunities,'opportunities'],[c.interactions,'interactions'],
-  ].map(x=>`<span><b>${Number(x[0]||0).toLocaleString('en-IN')}</b> ${x[1]}</span>`).join('');
+  ].map(x=>`<span><b data-count="${Number(x[0]||0)}">0</b> ${x[1]}</span>`).join('');
 
   view.innerHTML = `
     <div class="rd-view-head c360-head">
@@ -2602,6 +2773,13 @@ function rdRenderProfile(p){
         ${idCard}${kycCard}${facCard}${bureauCard}${spendCard}${txCard}${rpCard}${dspCard}${dcCard}${grCard}${opCard}${itCard}
       </div>
     </div>`;
+  // Trend lines + counters over the data already fetched for this view.
+  const recent = (sp.recent||[]).slice().reverse();     // API returns newest-first
+  if(recent.length > 2){
+    rxSpark('rxSparkBal', recent.map(t=>Number(t.balance_after_txn_inr)||0), { zeroLine:true, stroke:'#1b56d6' });
+    rxSpark('rxSparkTxn', recent.map(t=>Number(t.amount_inr)||0), { stroke:'#287c78', fillTop:'rgba(40,124,120,.22)' });
+  }
+  animateCounters(view);
   window.scrollTo({top:0,behavior:'smooth'});
 }
 

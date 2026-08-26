@@ -242,6 +242,33 @@
     return out;
   });
 
+  pal.register(function () { // live nudges streamed from the video-call app
+    var out = [];
+    try {
+      var store = w.RXI;
+      if (store && store.cache && store.cache.size) {
+        var latest = store.latest;
+        out.push({ group: 'Live call', icon: '&#128161;', title: 'Jump to the latest live nudge',
+          subtitle: latest ? (latest.headline || latest.eventId) : 'nothing captured yet',
+          keywords: 'nudge teams insight coaching live call',
+          run: function () { call('openLatestNudge'); } });
+        var seen = 0;
+        for (var i = store.order.length - 1; i >= 0 && seen < 6; i--) {
+          var e = store.cache.get(store.order[i]);
+          if (!e) continue;
+          seen++;
+          (function (entry) {
+            out.push({ group: 'Live call', icon: '&#9679;', title: entry.headline || entry.eventId,
+              subtitle: (entry.kind || 'insight').replace(/_/g, ' ') + ' \u00b7 ' + (entry.customerName || entry.customerId || ''),
+              keywords: (entry.kind || '') + ' ' + (entry.customerId || '') + ' ' + (entry.body || '').slice(0, 80),
+              run: function () { try { w.openInsight(entry); } catch (e2) {} } });
+          })(e);
+        }
+      }
+    } catch (e) {}
+    return out;
+  });
+
   /* ---------- global keybindings ---------- */
   d.addEventListener('keydown', function (e) {
     if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); pal.toggle(); return; }

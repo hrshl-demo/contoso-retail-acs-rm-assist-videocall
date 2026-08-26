@@ -36,7 +36,10 @@ const CONVERSATION_TYPE = QUERY.get('conversation_type') || (PARTICIPANT_ROLE ==
     if (consent) consent.textContent = internal ? 'This synthetic internal session is transcribed and added to the case evidence pack.' : 'Your session is recorded and AI-assisted to help your Relationship Manager serve you better.';
     if (localCaption) localCaption.textContent = PARTICIPANT_NAME;
     if (remoteCaption) remoteCaption.textContent = 'Relationship Manager';
-    if (remotePh) remotePh.textContent = 'Waiting for your RM…';
+    // The remote tile now renders a skeleton; keep the label in sync with it.
+    const remoteWaitText = document.querySelector('#remoteVideo .rx-wait-text');
+    if (remoteWaitText) remoteWaitText.textContent = REMOTE_WAIT_LABEL;
+    else if (remotePh) remotePh.textContent = 'Waiting for your RM…';
     document.title = internal ? `Video Assist — ${PARTICIPANT_NAME}` : 'Video Assist — Relationship Manager';
   });
 })();
@@ -44,6 +47,75 @@ const CONVERSATION_TYPE = QUERY.get('conversation_type') || (PARTICIPANT_ROLE ==
 function setStatus(s, label) { $('statusPill').dataset.state = s; $('statusText').textContent = label; }
 function setPhase(p) { document.body.dataset.phase = p; }
 function setLoading(on) { $('startBtn').dataset.loading = on ? 'true' : 'false'; $('startBtn').disabled = on; }
+
+/* =====================================================================
+   Phase 4 polish — active-speaker ring driven by REAL audio, and a
+   skeleton placeholder while the RM has not joined. Nothing here fakes
+   activity: the remote ring comes from ACS's own isSpeakingChanged and
+   the local ring from a Web Audio AnalyserNode measuring the mic.
+   ===================================================================== */
+const REMOTE_WAIT_LABEL = 'Waiting for your RM';
+function remoteWaitHtml(label) {
+  return '<div class="rx-wait" role="status" aria-live="polite">'
+    + '<div class="rx-wait-av rx-sk" aria-hidden="true"></div>'
+    + '<div class="rx-wait-lines" aria-hidden="true">'
+    + '<div class="rx-wait-line rx-sk"></div><div class="rx-wait-line short rx-sk"></div></div>'
+    + '<p class="rx-wait-label ph"><span class="rx-wait-text">' + (label || REMOTE_WAIT_LABEL)
+    + '</span><span class="rx-wait-dots" aria-hidden="true"></span></p></div>';
+}
+function resetRemoteTile(label) {
+  const f = $('remoteVideo');
+  if (!f) return;
+  f.innerHTML = remoteWaitHtml(label);
+  f.classList.remove('has-video', 'rx-speaking');
+}
+
+// --- local mic level -> ring ------------------------------------------------
+let micAudioCtx = null, micAnalyser = null, micStream = null, micRaf = 0;
+async function startLocalSpeakingMeter() {
+  if (micAnalyser) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC || !navigator.mediaDevices?.getUserMedia) return;
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micAudioCtx = new AC();
+    if (micAudioCtx.state === 'suspended') await micAudioCtx.resume().catch(() => {});
+    const src = micAudioCtx.createMediaStreamSource(micStream);
+    micAnalyser = micAudioCtx.createAnalyser();
+    micAnalyser.fftSize = 512;
+    micAnalyser.smoothingTimeConstant = 0.75;
+    src.connect(micAnalyser);
+    const buf = new Uint8Array(micAnalyser.fftSize);
+    const frame = $('localVideo');
+    let speaking = false, quietFrames = 0;
+    const tick = () => {
+      micRaf = requestAnimationFrame(tick);
+      if (!micAnalyser || !frame) return;
+      micAnalyser.getByteTimeDomainData(buf);
+      // RMS of the time-domain waveform, normalised around the 128 midpoint.
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+      const rms = Math.sqrt(sum / buf.length);
+      const level = Math.min(1, rms * 7);
+      frame.style.setProperty('--rx-level', level.toFixed(2));
+      // Hysteresis: quick to light up, slow to drop, so it doesn't strobe
+      // between syllables.
+      if (micOn && rms > 0.045) { quietFrames = 0; if (!speaking) { speaking = true; frame.classList.add('rx-speaking'); } }
+      else if (speaking && ++quietFrames > 22) { speaking = false; frame.classList.remove('rx-speaking'); }
+    };
+    tick();
+  } catch (e) { log('Speaking indicator unavailable: ' + (e?.message || e)); }
+}
+function stopLocalSpeakingMeter() {
+  if (micRaf) { cancelAnimationFrame(micRaf); micRaf = 0; }
+  micAnalyser = null;
+  try { micStream?.getTracks().forEach((t) => t.stop()); } catch (_) {}
+  micStream = null;
+  try { micAudioCtx?.close(); } catch (_) {}
+  micAudioCtx = null;
+  const f = $('localVideo');
+  if (f) { f.classList.remove('rx-speaking'); f.style.removeProperty('--rx-level'); }
+}
 
 // In-app browsers (WhatsApp, Instagram, Facebook, etc.) block camera/mic/WebRTC, which
 // makes the ACS call "time out". Detect and warn the customer to use a real browser.
@@ -87,6 +159,7 @@ async function startSession() {
     log('Joining the session…');
     call = callAgent.join({ meetingLink: link }, { videoOptions });
     micOn = true; setPhase('in-call'); reflectControls(); wireCall();
+    void startLocalSpeakingMeter();
   } catch (e) { log('Could not start: ' + (e?.message || e)); setStatus('error', "Couldn't connect"); setLoading(false); }
 }
 
@@ -324,21 +397,34 @@ function reflectControls() {
 /* video */
 async function showLocal(stream) { if (localRenderer) { localRenderer.dispose(); localRenderer = null; } localRenderer = new VideoStreamRenderer(stream); const v = await localRenderer.createView({ scalingMode: 'Crop' }); const f = $('localVideo'); f.innerHTML = ''; f.appendChild(v.target); f.classList.add('has-video'); }
 function hideLocal() { if (localRenderer) { localRenderer.dispose(); localRenderer = null; } const f = $('localVideo'); f.innerHTML = '<span class="ph">Camera off</span>'; f.classList.remove('has-video'); }
-function subscribe(p) { p.on('videoStreamsUpdated', (e) => { e.added.forEach(renderRemote); e.removed.forEach(unrender); }); p.videoStreams.forEach(renderRemote); }
+function subscribe(p) {
+  p.on('videoStreamsUpdated', (e) => { e.added.forEach(renderRemote); e.removed.forEach(unrender); });
+  p.videoStreams.forEach(renderRemote);
+  // Real speaking state from ACS — not a timer, not a guess.
+  try {
+    const reflect = () => {
+      const f = $('remoteVideo');
+      if (f) f.classList.toggle('rx-speaking', !!p.isSpeaking && !p.isMuted);
+    };
+    p.on('isSpeakingChanged', reflect);
+    p.on('isMutedChanged', reflect);
+    reflect();
+  } catch (e) { log('Remote speaking indicator unavailable: ' + (e?.message || e)); }
+}
 async function renderRemote(stream) {
   if (!stream.isAvailable) { stream.on('isAvailableChanged', () => { if (stream.isAvailable) renderRemote(stream); }); return; }
   if (remoteRenderers.has(stream)) return;
   const r = new VideoStreamRenderer(stream); const v = await r.createView({ scalingMode: 'Fit' });
   remoteRenderers.set(stream, r); const f = $('remoteVideo'); f.innerHTML = ''; f.appendChild(v.target); f.classList.add('has-video'); log('RM video connected.');
 }
-function unrender(stream) { const r = remoteRenderers.get(stream); if (r) { r.dispose(); remoteRenderers.delete(stream); } if (remoteRenderers.size === 0) { const f = $('remoteVideo'); f.innerHTML = '<span class="ph">Waiting for your RM…</span>'; f.classList.remove('has-video'); } }
+function unrender(stream) { const r = remoteRenderers.get(stream); if (r) { r.dispose(); remoteRenderers.delete(stream); } if (remoteRenderers.size === 0) resetRemoteTile(); }
 
 function endCleanup() {
-  stopRecognition(); sessionStarted = false;
+  stopRecognition(); stopLocalSpeakingMeter(); sessionStarted = false;
   remoteRenderers.forEach((r) => r.dispose()); remoteRenderers.clear();
   if (localRenderer) { localRenderer.dispose(); localRenderer = null; }
   $('localVideo').innerHTML = '<span class="ph">Camera preview</span>'; $('localVideo').classList.remove('has-video');
-  $('remoteVideo').innerHTML = '<span class="ph">Waiting for your RM…</span>'; $('remoteVideo').classList.remove('has-video');
+  resetRemoteTile();
   setPhase('idle'); setLoading(false); call = null;
 }
 function flashInput(msg) { const i = $('meetingLink'); i.classList.add('shake'); log(msg); setTimeout(() => i.classList.remove('shake'), 450); }

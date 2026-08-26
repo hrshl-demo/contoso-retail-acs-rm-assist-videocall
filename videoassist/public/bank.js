@@ -100,6 +100,7 @@
     openOverlay();
     $('phaseWait').classList.remove('hide'); $('phaseReady').classList.add('hide');
     $('ringTime').textContent = '…'; setStep('notify');
+    var ring0 = $('ring'); ring0.classList.remove('is-final', 'is-done'); paintRing(0);
     fetch('/call/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId: CID }) })
       .then(function (r) { return r.json(); })
       .then(function (c) {
@@ -110,20 +111,36 @@
       .catch(function () { $('ringTime').textContent = '!'; $('steps').innerHTML = '<li class="doing" style="color:var(--danger)">Could not reach the call service — please retry.</li>'; });
   }
 
+  var RING_C = 2 * Math.PI * 60;   // circumference of the r=60 progress arc
+  function paintRing(pct) {
+    var bar = $('ringBar');
+    if (bar) bar.style.strokeDashoffset = String(RING_C * (1 - Math.max(0, Math.min(100, pct)) / 100));
+    $('ring').style.setProperty('--pct', Math.round(pct) + '%');
+  }
+
   function runCountdown() {
     var total = (call.leadSeconds || 60) * 1000;
     var target = new Date(call.scheduledAt).getTime();
+    var ring = $('ring');
     function frame() {
       var rem = target - Date.now();
-      if (rem <= 0) { $('ringTime').textContent = '0:00'; $('ring').style.setProperty('--pct', '100%'); allStepsDone(); showReady(); return; }
+      if (rem <= 0) {
+        $('ringTime').textContent = '0:00';
+        paintRing(100);
+        ring.classList.remove('is-final'); ring.classList.add('is-done');
+        allStepsDone(); showReady(); return;
+      }
       $('ringTime').textContent = fmt(rem);
-      var pct = Math.min(100, Math.round(((total - rem) / total) * 100));
-      $('ring').style.setProperty('--pct', pct + '%');
+      // The arc is repainted ~10x a second, so the sweep is continuous rather
+      // than stepping once per displayed second.
+      paintRing(Math.min(100, ((total - rem) / total) * 100));
+      ring.classList.toggle('is-final', rem <= 10000);
+      var pct = ((total - rem) / total) * 100;
       if (pct < 40) setStep('notify'); else if (pct < 80) setStep('room'); else setStep('ready');
     }
     frame();
     if (tick) clearInterval(tick);
-    tick = setInterval(frame, 1000);
+    tick = setInterval(frame, 100);
   }
 
   function pollStatus() {

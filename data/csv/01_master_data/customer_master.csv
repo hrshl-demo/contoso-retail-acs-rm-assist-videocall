@@ -1,2 +1,5 @@
 customer_id,legal_name,display_name,constitution,pan_masked,gstin_masked,udyam_reg_no,customer_since,home_branch_code,rm_id,segment,risk_category,kyc_status,next_kyc_due_date,consent_status,relationship_value_score,priority_sector_flag,created_at,updated_at
 CTB-RTL-002,Rakesh Sharma,Rakesh Sharma,Individual,BKSPS4467L,,,2022-11-08,CTB-PUN-017,RM-2207,Retail - Self-employed,Medium,Due,2026-07-31,Active,41,N,2026-05-01T00:00:00,2026-05-20T14:30:00
+CTB-RTL-003,Meera Iyer,Meera Iyer,Individual,AKQPI2210C,,,2019-02-14,CTB-PUN-017,RM-2207,Retail - Individual,Low,Valid,2026-07-31,Active,78,N,2026-05-01T00:00:00,2026-05-20T14:30:00
+CTB-RTL-004,Imran Qureshi,Imran Qureshi,Individual,CLMPQ7781R,,,2020-08-03,CTB-PUN-017,RM-2207,Retail - Individual,Medium,Valid,2026-07-31,Active,58,N,2026-05-01T00:00:00,2026-05-20T14:30:00
+CTB-RTL-005,Anita Deshmukh,Anita Deshmukh,Individual,DRQPD3390K,,,2015-06-22,CTB-PUN-017,RM-2207,Retail - Individual,Low,Valid,2026-07-31,Active,78,N,2026-05-01T00:00:00,2026-05-20T14:30:00

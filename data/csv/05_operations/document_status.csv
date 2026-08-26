@@ -6,3 +6,24 @@ DOC-B-INC-03,CTB-RTL-002,FAC-B-CC-001,Income proof / salary slip,KYC,Y,Pending,,
 DOC-B-VID-04,CTB-RTL-002,FAC-B-CC-001,Video re-KYC,KYC,Y,Pending,,,blob://synthetic/kyc/B/video_re-kyc.pdf,Y,Customer,Video re-KYC pending
 DOC-B-NOM-05,CTB-RTL-002,FAC-B-CC-001,Nominee form,Account,N,Received,2025-06-01,,blob://synthetic/kyc/B/nominee_form.pdf,N,Operations,Nominee form received
 DOC-B-FOR-06,CTB-RTL-002,FAC-B-CC-001,Form 60/PAN linkage,KYC,N,Received,2025-06-01,,blob://synthetic/kyc/B/form_60/pan_linkage.pdf,N,Operations,Form 60/PAN linkage received
+DOC-C1-PAN-00,CTB-RTL-003,FAC-C1-CC-001,PAN card,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C1/pan_card.pdf,N,Customer,PAN card received
+DOC-C1-AAD-01,CTB-RTL-003,FAC-C1-CC-001,Aadhaar (masked),KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C1/aadhaar_(masked).pdf,N,Customer,Aadhaar (masked) received
+DOC-C1-ADD-02,CTB-RTL-003,FAC-C1-CC-001,Address proof,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C1/address_proof.pdf,N,Customer,Address proof received
+DOC-C1-INC-03,CTB-RTL-003,FAC-C1-CC-001,Income proof / salary slip,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C1/income_proof_/_salary_slip.pdf,N,Customer,Income proof / salary slip received
+DOC-C1-VID-04,CTB-RTL-003,FAC-C1-CC-001,Video re-KYC,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C1/video_re-kyc.pdf,N,Customer,Video re-KYC received
+DOC-C1-NOM-05,CTB-RTL-003,FAC-C1-CC-001,Nominee form,Account,N,Received,2025-06-01,,blob://synthetic/kyc/C1/nominee_form.pdf,N,Operations,Nominee form received
+DOC-C1-FOR-06,CTB-RTL-003,FAC-C1-CC-001,Form 60/PAN linkage,KYC,N,Received,2025-06-01,,blob://synthetic/kyc/C1/form_60/pan_linkage.pdf,N,Operations,Form 60/PAN linkage received
+DOC-C2-PAN-00,CTB-RTL-004,FAC-C2-CC-001,PAN card,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C2/pan_card.pdf,N,Customer,PAN card received
+DOC-C2-AAD-01,CTB-RTL-004,FAC-C2-CC-001,Aadhaar (masked),KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C2/aadhaar_(masked).pdf,N,Customer,Aadhaar (masked) received
+DOC-C2-ADD-02,CTB-RTL-004,FAC-C2-CC-001,Address proof,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C2/address_proof.pdf,N,Customer,Address proof received
+DOC-C2-INC-03,CTB-RTL-004,FAC-C2-CC-001,Income proof / salary slip,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C2/income_proof_/_salary_slip.pdf,N,Customer,Income proof / salary slip received
+DOC-C2-VID-04,CTB-RTL-004,FAC-C2-CC-001,Video re-KYC,KYC,Y,Pending,,,blob://synthetic/kyc/C2/video_re-kyc.pdf,Y,Customer,Video re-KYC pending
+DOC-C2-NOM-05,CTB-RTL-004,FAC-C2-CC-001,Nominee form,Account,N,Received,2025-06-01,,blob://synthetic/kyc/C2/nominee_form.pdf,N,Operations,Nominee form received
+DOC-C2-FOR-06,CTB-RTL-004,FAC-C2-CC-001,Form 60/PAN linkage,KYC,N,Received,2025-06-01,,blob://synthetic/kyc/C2/form_60/pan_linkage.pdf,N,Operations,Form 60/PAN linkage received
+DOC-C3-PAN-00,CTB-RTL-005,FAC-C3-CC-001,PAN card,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C3/pan_card.pdf,N,Customer,PAN card received
+DOC-C3-AAD-01,CTB-RTL-005,FAC-C3-CC-001,Aadhaar (masked),KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C3/aadhaar_(masked).pdf,N,Customer,Aadhaar (masked) received
+DOC-C3-ADD-02,CTB-RTL-005,FAC-C3-CC-001,Address proof,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C3/address_proof.pdf,N,Customer,Address proof received
+DOC-C3-INC-03,CTB-RTL-005,FAC-C3-CC-001,Income proof / salary slip,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C3/income_proof_/_salary_slip.pdf,N,Customer,Income proof / salary slip received
+DOC-C3-VID-04,CTB-RTL-005,FAC-C3-CC-001,Video re-KYC,KYC,Y,Received,2025-06-01,,blob://synthetic/kyc/C3/video_re-kyc.pdf,N,Customer,Video re-KYC received
+DOC-C3-NOM-05,CTB-RTL-005,FAC-C3-CC-001,Nominee form,Account,N,Received,2025-06-01,,blob://synthetic/kyc/C3/nominee_form.pdf,N,Operations,Nominee form received
+DOC-C3-FOR-06,CTB-RTL-005,FAC-C3-CC-001,Form 60/PAN linkage,KYC,N,Received,2025-06-01,,blob://synthetic/kyc/C3/form_60/pan_linkage.pdf,N,Operations,Form 60/PAN linkage received

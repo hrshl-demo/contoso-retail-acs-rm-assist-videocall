@@ -7,3 +7,27 @@ CP-B-UTIL,CTB-RTL-002,MSEDCL / Utilities,Supplier,2022-05-01,Maharashtra,Low,N,1
 CP-B-SHOP,CTB-RTL-002,Reliance Trends,Supplier,2022-05-01,Maharashtra,Medium,N,23100,Regular
 CP-B-ATM,CTB-RTL-002,ATM cash withdrawal,Supplier,2022-05-01,Maharashtra,Low,N,18900,Regular
 CP-B-BANK,CTB-RTL-002,Contoso Bank,Bank,2022-05-01,Maharashtra,Low,N,0,Regular
+CP-C1-INC,CTB-RTL-003,Monthly salary credit,Buyer,2022-05-01,Maharashtra,High,N,105000,Regular
+CP-C1-GM,CTB-RTL-003,GlobalMart Online,Supplier,2022-05-01,Maharashtra,Medium,N,13800,Regular
+CP-C1-SHOP,CTB-RTL-003,Reliance Trends,Supplier,2022-05-01,Maharashtra,Medium,N,12450,Regular
+CP-C1-FOOD,CTB-RTL-003,Zomato,Supplier,2022-05-01,Maharashtra,Medium,N,5265,Regular
+CP-C1-FUEL,CTB-RTL-003,Indian Oil Fuel,Supplier,2022-05-01,Maharashtra,Medium,N,6825,Regular
+CP-C1-UTIL,CTB-RTL-003,MSEDCL / Utilities,Supplier,2022-05-01,Maharashtra,Low,N,4185,Regular
+CP-C1-ATM,CTB-RTL-003,ATM cash withdrawal,Supplier,2022-05-01,Maharashtra,Low,N,10000,Regular
+CP-C1-BANK,CTB-RTL-003,Contoso Bank,Bank,2022-05-01,Maharashtra,Low,N,0,Regular
+CP-C2-INC,CTB-RTL-004,Monthly salary credit,Buyer,2022-05-01,Maharashtra,High,N,105000,Regular
+CP-C2-GM,CTB-RTL-004,GlobalMart Online,Supplier,2022-05-01,Maharashtra,Medium,N,13800,Regular
+CP-C2-SHOP,CTB-RTL-004,Reliance Trends,Supplier,2022-05-01,Maharashtra,Medium,N,12450,Regular
+CP-C2-FOOD,CTB-RTL-004,Zomato,Supplier,2022-05-01,Maharashtra,Medium,N,5265,Regular
+CP-C2-FUEL,CTB-RTL-004,Indian Oil Fuel,Supplier,2022-05-01,Maharashtra,Medium,N,6825,Regular
+CP-C2-UTIL,CTB-RTL-004,MSEDCL / Utilities,Supplier,2022-05-01,Maharashtra,Low,N,4185,Regular
+CP-C2-ATM,CTB-RTL-004,ATM cash withdrawal,Supplier,2022-05-01,Maharashtra,Low,N,10000,Regular
+CP-C2-BANK,CTB-RTL-004,Contoso Bank,Bank,2022-05-01,Maharashtra,Low,N,0,Regular
+CP-C3-INC,CTB-RTL-005,Monthly salary credit,Buyer,2022-05-01,Maharashtra,High,N,105000,Regular
+CP-C3-GM,CTB-RTL-005,GlobalMart Online,Supplier,2022-05-01,Maharashtra,Medium,N,13800,Regular
+CP-C3-SHOP,CTB-RTL-005,Reliance Trends,Supplier,2022-05-01,Maharashtra,Medium,N,12450,Regular
+CP-C3-FOOD,CTB-RTL-005,Zomato,Supplier,2022-05-01,Maharashtra,Medium,N,5265,Regular
+CP-C3-FUEL,CTB-RTL-005,Indian Oil Fuel,Supplier,2022-05-01,Maharashtra,Medium,N,6825,Regular
+CP-C3-UTIL,CTB-RTL-005,MSEDCL / Utilities,Supplier,2022-05-01,Maharashtra,Low,N,4185,Regular
+CP-C3-ATM,CTB-RTL-005,ATM cash withdrawal,Supplier,2022-05-01,Maharashtra,Low,N,10000,Regular
+CP-C3-BANK,CTB-RTL-005,Contoso Bank,Bank,2022-05-01,Maharashtra,Low,N,0,Regular

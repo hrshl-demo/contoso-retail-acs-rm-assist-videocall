@@ -3,3 +3,15 @@ TASK-B-001,CTB-RTL-002,RM-2207,Resolve card dispute SR-B-202602-001 (chargeback)
 TASK-B-002,CTB-RTL-002,RM-2207,Offer EMI restructuring / step-down,2026-04-10,Open,High,RM,Approved
 TASK-B-003,CTB-RTL-002,RM-2207,Compute EMI-conversion savings on card,2026-04-11,Open,Medium,RM,Approved
 TASK-B-004,CTB-RTL-002,RM-2207,Late-fee waiver review + retention call,2026-04-14,Open,High,RM,Approved
+TASK-C1-001,CTB-RTL-003,RM-2207,Book the protection review conversation,2026-04-09,Open,Medium,RM,Approved
+TASK-C1-002,CTB-RTL-003,RM-2207,Model the surplus-balance deposit ladder,2026-04-10,Open,Medium,RM,Approved
+TASK-C1-003,CTB-RTL-003,RM-2207,Confirm the nominee update landed in CBS,2026-04-11,Open,Low,RM,Approved
+TASK-C1-004,CTB-RTL-003,RM-2207,Share the 400-day deposit rate card,2026-04-14,Open,Low,RM,Approved
+TASK-C2-001,CTB-RTL-004,RM-2207,Issue the arrear-cured confirmation letter,2026-04-09,Open,High,RM,Approved
+TASK-C2-002,CTB-RTL-004,RM-2207,Prepare the rate-review submission,2026-04-10,Open,Medium,RM,Approved
+TASK-C2-003,CTB-RTL-004,RM-2207,Model card-to-loan consolidation savings,2026-04-11,Open,Medium,RM,Approved
+TASK-C2-004,CTB-RTL-004,RM-2207,Review card limit restoration eligibility,2026-04-14,Open,Medium,RM,Approved
+TASK-C3-001,CTB-RTL-005,RM-2207,Book the protection review conversation,2026-04-09,Open,Medium,RM,Approved
+TASK-C3-002,CTB-RTL-005,RM-2207,Model the surplus-balance deposit ladder,2026-04-10,Open,Medium,RM,Approved
+TASK-C3-003,CTB-RTL-005,RM-2207,Confirm the nominee update landed in CBS,2026-04-11,Open,Low,RM,Approved
+TASK-C3-004,CTB-RTL-005,RM-2207,Share the 400-day deposit rate card,2026-04-14,Open,Low,RM,Approved

@@ -772,10 +772,16 @@ async function loadQueue() {
 
 function renderQueue() {
   const bucketClass = (b) => (b === "Risk Watch" || b === "Customer Intervention") ? "b-risk" : b === "Growth" ? "b-growth" : "b-renewal";
-  // Lean build: the queue focuses on the single demoable RM Assist journey (Rakesh Sharma).
-  const DEMO_IDS = ["CTB-RTL-002"];
-  let q = QUEUE_CACHE.filter(c => DEMO_IDS.includes(c.customer_id))
-                     .sort((a, b) => DEMO_IDS.indexOf(a.customer_id) - DEMO_IDS.indexOf(b.customer_id));
+  // The queue renders the whole RM portfolio as returned by the Tool API, so the
+  // number of customers in the data pack drives the view. Rakesh is PINNED FIRST
+  // because he is the guided RM Assist journey; everyone else follows in a stable
+  // alphabetical order. (This used to hard-filter to Rakesh alone, which silently
+  // capped the queue at one card no matter what the pack contained.)
+  const PINNED_IDS = ["CTB-RTL-002"];
+  const pinRank = (c) => { const i = PINNED_IDS.indexOf(c.customer_id); return i === -1 ? PINNED_IDS.length : i; };
+  let q = QUEUE_CACHE.slice()
+                     .sort((a, b) => pinRank(a) - pinRank(b)
+                       || String(a.display_name || "").localeCompare(String(b.display_name || "")));
   if (QUEUE_FILTER !== "all") q = q.filter(c => bucketKey(c.bucket) === QUEUE_FILTER);
   if (QUEUE_SEARCH) q = q.filter(c => (String(c.display_name||"") + " " + String(c.reason||"")).toLowerCase().includes(QUEUE_SEARCH));
   $("qcount").textContent = q.length + " accounts";

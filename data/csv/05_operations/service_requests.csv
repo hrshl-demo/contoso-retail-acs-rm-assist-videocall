@@ -4,3 +4,18 @@ SR-B-202601-002,CTB-RTL-002,2026-02-20,EMI bounce / collections call,Two persona
 SR-B-202602-003,CTB-RTL-002,2026-02-20,Late-payment charge dispute,Customer disputes late-payment fee on the credit card.,Open,Medium,2026-02-25,,Negative,Raise on next call
 SR-B-202603-004,CTB-RTL-002,2026-01-15,Card blocked - reissue,Customer raised card blocked - reissue,Closed,Medium,2026-02-25,2026-01-20,Neutral,Resolved
 SR-B-202604-005,CTB-RTL-002,2026-01-15,Statement request,Customer raised statement request,Closed,Low,2026-02-25,2026-01-20,Neutral,Resolved
+SR-C1-202602-001,CTB-RTL-003,2026-02-11,Standing instruction setup,Customer asked to automate the card payment from the savings account.,Closed,Low,2026-02-25,2026-01-20,Positive,Resolved
+SR-C1-202602-002,CTB-RTL-003,2026-02-18,Nominee update,Customer updated the nominee on the savings account.,Closed,Low,2026-02-25,2026-01-20,Neutral,Resolved
+SR-C1-202603-003,CTB-RTL-003,2026-03-02,Term deposit rate query,Customer asked what rate applies to a 400-day deposit.,Open,Low,2026-02-25,,Positive,Raise on next call
+SR-C1-202601-004,CTB-RTL-003,2026-01-09,Statement request,Customer raised statement request,Closed,Low,2026-02-25,2026-01-20,Neutral,Resolved
+SR-C1-202603-005,CTB-RTL-003,2026-03-14,Insurance renewal reminder,Customer asked when the protection policy renews.,Open,Medium,2026-02-25,,Neutral,Raise on next call
+SR-C2-202601-001,CTB-RTL-004,2026-01-22,Arrear clearance confirmation,Customer asked for written confirmation that the historic arrear is cured.,Closed,High,2026-02-25,2026-01-20,Concerned,Resolved
+SR-C2-202602-002,CTB-RTL-004,2026-02-14,Interest rate review request,Customer requested a rate review now that repayments are regular.,Open,Medium,2026-02-25,,Neutral,Raise on next call
+SR-C2-202602-003,CTB-RTL-004,2026-02-27,Card limit restoration query,Customer asked when the reduced card limit can be restored.,Open,Medium,2026-02-25,,Concerned,Raise on next call
+SR-C2-202601-004,CTB-RTL-004,2026-01-08,Statement request,Customer raised statement request,Closed,Low,2026-02-25,2026-01-20,Neutral,Resolved
+SR-C2-202603-005,CTB-RTL-004,2026-03-05,Consolidation options,Customer asked whether the card balance can move into the personal loan.,Open,Medium,2026-02-25,,Positive,Raise on next call
+SR-C3-202602-001,CTB-RTL-005,2026-02-11,Standing instruction setup,Customer asked to automate the card payment from the savings account.,Closed,Low,2026-02-25,2026-01-20,Positive,Resolved
+SR-C3-202602-002,CTB-RTL-005,2026-02-18,Nominee update,Customer updated the nominee on the savings account.,Closed,Low,2026-02-25,2026-01-20,Neutral,Resolved
+SR-C3-202603-003,CTB-RTL-005,2026-03-02,Term deposit rate query,Customer asked what rate applies to a 400-day deposit.,Open,Low,2026-02-25,,Positive,Raise on next call
+SR-C3-202601-004,CTB-RTL-005,2026-01-09,Statement request,Customer raised statement request,Closed,Low,2026-02-25,2026-01-20,Neutral,Resolved
+SR-C3-202603-005,CTB-RTL-005,2026-03-14,Insurance renewal reminder,Customer asked when the protection policy renews.,Open,Medium,2026-02-25,,Neutral,Raise on next call

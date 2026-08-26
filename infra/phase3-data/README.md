@@ -103,6 +103,33 @@ Rather than a flat random walk, the ledger is shaped by:
 6. Rakesh's full stress narrative (see above).
 7. Every additional customer is consistent with its declared persona.
 
+## Known, deliberately unfixed
+
+**`rm_interactions.linked_task_id` dangles for two of Rakesh's rows.**
+`INT-B-005` and `INT-B-006` reference `TASK-B-005` and `TASK-B-006`, but
+`crm_tasks.csv` only defines `TASK-B-001`–`TASK-B-004`. This predates the
+generator (it is hand-authored fixture data) and affects **only** CTB-RTL-002 —
+`generate_seed.py` clamps the link with `min(i, len(task_defs))`, so every
+generated customer is clean.
+
+It is left as-is on purpose. The reference is **inert**: the only occurrence of
+`linked_task_id` anywhere in the codebase is a write defaulting it to `""`
+(`backend/app/routes/call_records.py`), so nothing dereferences it and nothing
+renders it. Both possible fixes cost more than the defect:
+
+- editing Rakesh's rows breaks the invariant that his committed data is
+  byte-identical, which the whole append-only design exists to protect;
+- adding `TASK-B-005`/`006` would surface two new tasks in his CRM and change
+  what is on screen during the demo.
+
+Contrast with the `repayment_history` quoting fix, which *was* applied: that one
+corrupted text the cockpit actually displays, and the dropped fragment
+(`SMA-1`) is load-bearing for the collections narrative.
+
+`validate_seed.py` does not check `linked_task_id`, so this does not affect its
+result. A cross-customer FK isolation sweep over all 7,019 references found zero
+leakage between customers.
+
 ## Provenance
 
 `data/knowledge_base/ai_generation_manifest.json` is written **by the run** and

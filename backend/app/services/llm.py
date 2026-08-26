@@ -18,6 +18,8 @@ figures, approvals, or facts. This keeps the on-the-fly narratives auditable.
 from __future__ import annotations
 import json
 import logging
+import os
+import re
 from functools import lru_cache
 
 from app.config import get_settings
@@ -27,6 +29,50 @@ log = logging.getLogger("contoso.msme.llm")
 
 class LLMUnavailable(Exception):
     pass
+
+
+# --- Reasoning vs non-reasoning request shape ---------------------------------------
+# Reasoning deployments (gpt-5.x / o-series) reject `temperature` and `max_tokens`; they
+# take `max_completion_tokens`, out of which their hidden reasoning tokens are also
+# billed. The backend narration path runs on gpt-4.1-mini, which is NOT a reasoning
+# model, so in the default deployment this branch never fires and the request shape is
+# unchanged. It exists so that pointing FAST_CHAT_DEPLOYMENT (or FOUNDRY_CHAT_DEPLOYMENT)
+# at the voice deployment does not silently return empty completions.
+_REASONING_NAME_HINT = re.compile(r"(^|[^a-z0-9])(gpt-5|o1|o3|o4)", re.IGNORECASE)
+_REASONING_EFFORT = os.getenv("VOICE_AI_REASONING_EFFORT", "low")
+_REASONING_MIN_TOKENS = int(os.getenv("VOICE_AI_REASONING_MIN_TOKENS", "512"))
+_REASONING_TOKEN_MULTIPLIER = float(os.getenv("VOICE_AI_REASONING_TOKEN_MULTIPLIER", "6"))
+
+
+def _reasoning_deployments() -> set[str]:
+    raw = os.getenv("AI_REASONING_DEPLOYMENTS", "")
+    return {p.strip() for p in raw.split(",") if p.strip()}
+
+
+def is_reasoning_model(model: str) -> bool:
+    m = str(model or "")
+    return m in _reasoning_deployments() or bool(_REASONING_NAME_HINT.search(m))
+
+
+def build_params(model: str, *, max_tokens: int | None = None,
+                 temperature: float | None = None, json_mode: bool = False) -> dict:
+    """Model-specific half of a chat.completions request body."""
+    params: dict = {"model": model}
+    if is_reasoning_model(model):
+        params["reasoning_effort"] = _REASONING_EFFORT
+        if max_tokens is not None:
+            params["max_completion_tokens"] = max(
+                _REASONING_MIN_TOKENS, int(max_tokens * _REASONING_TOKEN_MULTIPLIER)
+            )
+        # `temperature` is deliberately omitted: reasoning models reject it.
+    else:
+        if temperature is not None:
+            params["temperature"] = temperature
+        if max_tokens is not None:
+            params["max_tokens"] = max_tokens
+    if json_mode:
+        params["response_format"] = {"type": "json_object"}
+    return params
 
 
 @lru_cache(maxsize=1)
@@ -69,8 +115,9 @@ def chat(messages: list[dict], temperature: float = 0.5, max_tokens: int = 900,
     Pass `deployment` to override the default chat model (e.g. a faster mini)."""
     client, default_deployment = _client()
     resp = client.chat.completions.create(
-        model=deployment or default_deployment, messages=messages,
-        temperature=temperature, max_tokens=max_tokens,
+        **build_params(deployment or default_deployment,
+                       max_tokens=max_tokens, temperature=temperature),
+        messages=messages,
     )
     return (resp.choices[0].message.content or "").strip()
 
@@ -112,11 +159,10 @@ def narrate_json(task_instruction: str, evidence: dict, schema_hint: str,
     )
     client, default_deployment = _client()
     resp = client.chat.completions.create(
-        model=deployment or default_deployment,
+        **build_params(deployment or default_deployment,
+                       max_tokens=max_tokens, temperature=temperature, json_mode=True),
         messages=[{"role": "system", "content": system_prompt or SYSTEM_GUARDRAIL},
                   {"role": "user", "content": user}],
-        temperature=temperature, max_tokens=max_tokens,
-        response_format={"type": "json_object"},
     )
     raw = (resp.choices[0].message.content or "{}").strip()
     return _json.loads(raw)

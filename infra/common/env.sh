@@ -139,6 +139,28 @@ export AOAI_CHAT_PROTECTED_DEPLOYMENTS="${AOAI_CHAT_PROTECTED_DEPLOYMENTS:-}"
 # The rest of the stack references the chat deployment by this name.
 export EXISTING_AOAI_CHAT_DEPLOYMENT="$AOAI_CHAT_DEPLOYMENT_NAME"
 
+# --- VOICE model — a THIRD, dedicated deployment for the live-call intelligence -------
+# The in-call path (fast nudge classifier, answer/tool planner, synopsis, case logging)
+# runs on a REASONING model. The CRM / backend narration path is untouched and stays on
+# $AOAI_CHAT_MODEL_NAME. DEPLOY_TYPE (ptu|payg) continues to govern ONLY the chat
+# deployment above — it does not apply here.
+#
+# IDEMPOTENCY WARNING: phase2-ai/up.sh treats a deployment as "already there" by
+# DEPLOYMENT NAME, not by model. If you change AOAI_VOICE_MODEL_NAME you MUST also
+# change AOAI_VOICE_DEPLOYMENT_NAME, otherwise the old model is silently reused.
+# Azure deployment names may not contain '.', hence "gpt-54-mini-voice".
+export VOICE_MODEL_ENABLED="${VOICE_MODEL_ENABLED:-1}"   # 0 => voice path falls back to the chat deployment
+export AOAI_VOICE_MODEL_NAME="${AOAI_VOICE_MODEL_NAME:-gpt-5.4-mini}"
+export AOAI_VOICE_MODEL_FORMAT="${AOAI_VOICE_MODEL_FORMAT:-OpenAI}"
+export AOAI_VOICE_MODEL_VERSION="${AOAI_VOICE_MODEL_VERSION:-}"   # empty => auto-discover latest available version
+export AOAI_VOICE_DEPLOYMENT_NAME="${AOAI_VOICE_DEPLOYMENT_NAME:-gpt-54-mini-voice}"
+export AOAI_VOICE_SKU_NAME="${AOAI_VOICE_SKU_NAME:-GlobalStandard}"
+export AOAI_VOICE_SKU_CAPACITY="${AOAI_VOICE_SKU_CAPACITY:-50}"   # ×1K tokens/min quota units
+# Reasoning models bill their hidden reasoning tokens out of max_completion_tokens, so a
+# low effort keeps in-call latency inside the nudge freshness window.
+export VOICE_AI_REASONING_EFFORT="${VOICE_AI_REASONING_EFFORT:-low}"
+export EXISTING_AOAI_VOICE_DEPLOYMENT="$AOAI_VOICE_DEPLOYMENT_NAME"
+
 # --- Embedding model — CREATED + DELETED (fresh, powers RAG/SOP search in phase5) -----
 export AOAI_EMBED_MODEL_NAME="${AOAI_EMBED_MODEL_NAME:-text-embedding-3-small}"
 export AOAI_EMBED_MODEL_FORMAT="${AOAI_EMBED_MODEL_FORMAT:-OpenAI}"
@@ -204,18 +226,42 @@ export AZURE_AI_SCOPE="https://ai.azure.com/.default"
 export AZURE_SPEECH_REGION="${AZURE_SPEECH_REGION:-$AZ_REGION_SPEECH}"
 export AZURE_SPEECH_RESOURCE_ID="${AZURE_SPEECH_RESOURCE_ID:-/subscriptions/${AZ_SUBSCRIPTION_ID}/resourceGroups/${AZ_RG}/providers/Microsoft.CognitiveServices/accounts/${NAME_SPEECH}}"
 export ACS_DATA_LOCATION="${ACS_DATA_LOCATION:-India}"
-# In-call synopsis/nudge model (defaults to the 15-PTU chat deployment).
-export VOICE_AI_CHAT_DEPLOYMENT="${VOICE_AI_CHAT_DEPLOYMENT:-$AOAI_CHAT_DEPLOYMENT_NAME}"
+# In-call synopsis/nudge model. When VOICE_MODEL_ENABLED=1 this points at the dedicated
+# reasoning voice deployment created by phase2; otherwise it falls back to the
+# DEPLOY_TYPE-selected chat deployment (the original behaviour).
+# ROLLBACK LEVER: if in-call latency regresses, set VOICE_AI_FAST_DEPLOYMENT (or both)
+# back to "$AOAI_CHAT_DEPLOYMENT_NAME" — the fast classifier is the latency-critical one.
+if [[ "${VOICE_MODEL_ENABLED:-1}" == "1" ]]; then
+  export VOICE_AI_CHAT_DEPLOYMENT="${VOICE_AI_CHAT_DEPLOYMENT:-$AOAI_VOICE_DEPLOYMENT_NAME}"
+else
+  export VOICE_AI_CHAT_DEPLOYMENT="${VOICE_AI_CHAT_DEPLOYMENT:-$AOAI_CHAT_DEPLOYMENT_NAME}"
+fi
 export VOICE_AI_FAST_DEPLOYMENT="${VOICE_AI_FAST_DEPLOYMENT:-$VOICE_AI_CHAT_DEPLOYMENT}"
+# Deployment names (comma-separated) that must use the reasoning-model request shape
+# (reasoning_effort + max_completion_tokens, no temperature). Empty when the voice model
+# is disabled, which restores the original request shape exactly.
+if [[ "${VOICE_MODEL_ENABLED:-1}" == "1" ]]; then
+  export AI_REASONING_DEPLOYMENTS="${AI_REASONING_DEPLOYMENTS:-$AOAI_VOICE_DEPLOYMENT_NAME}"
+else
+  export AI_REASONING_DEPLOYMENTS="${AI_REASONING_DEPLOYMENTS:-}"
+fi
 export VOICE_AI_WARMUP="${VOICE_AI_WARMUP:-1}"
 # Voice Live is a MANAGED MODEL IDENTIFIER (not a deployment / not a resource, no extra cost).
 # Referenced by phase2 (emits it to outputs.env) and phase4 (Tool API env). The lean
 # Rakesh flow does not exercise the realtime voice-live path, but the value must be defined.
 export VOICELIVE_MODEL="${VOICELIVE_MODEL:-gpt-4.1}"
 # Live-nudge tuning (safe defaults; override only if the demo needs different timings).
-export FAST_NUDGE_TIMEOUT_MS="${FAST_NUDGE_TIMEOUT_MS:-3400}"
+# A reasoning model spends hidden thinking time before its first token, so the
+# latency-critical classifier gets a wider abort window and a wider freshness window
+# when VOICE_MODEL_ENABLED=1. With VOICE_MODEL_ENABLED=0 the original timings apply.
+if [[ "${VOICE_MODEL_ENABLED:-1}" == "1" ]]; then
+  export FAST_NUDGE_TIMEOUT_MS="${FAST_NUDGE_TIMEOUT_MS:-7000}"
+  export NUDGE_FRESHNESS_MS="${NUDGE_FRESHNESS_MS:-9000}"
+else
+  export FAST_NUDGE_TIMEOUT_MS="${FAST_NUDGE_TIMEOUT_MS:-3400}"
+  export NUDGE_FRESHNESS_MS="${NUDGE_FRESHNESS_MS:-5500}"
+fi
 export FAST_PATH_HEADSTART_MS="${FAST_PATH_HEADSTART_MS:-300}"
-export NUDGE_FRESHNESS_MS="${NUDGE_FRESHNESS_MS:-5500}"
 export NUDGE_TEAMS_TIMEOUT_MS="${NUDGE_TEAMS_TIMEOUT_MS:-5000}"
 export NUDGE_MIN_CONFIDENCE="${NUDGE_MIN_CONFIDENCE:-0.68}"
 

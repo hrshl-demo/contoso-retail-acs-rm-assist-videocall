@@ -17,7 +17,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
-COPY server.js nudge-engine.js toolapi.js teams.js graph.js ./
+COPY server.js nudge-engine.js toolapi.js teams.js graph.js insight-store.js ./
 COPY public ./public
 COPY data ./data
 COPY --from=build /app/dist ./dist

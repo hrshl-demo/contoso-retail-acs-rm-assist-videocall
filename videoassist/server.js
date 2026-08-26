@@ -8,7 +8,8 @@ import {
   generateSynopsis, evaluateNudgeFast, evaluateCaseConsent, respond, diagnose, generateCaseFromTranscript,
 } from './nudge-engine.js';
 import { getRawFacts, crmPropose, crmApprove, saveCallRecord } from './toolapi.js';
-import { postText, synopsisText, answerText, nudgeText, caseConsentNudgeText, caseConsentClarifyText, caseLoggedText, transcriptReadyText, callRequestText } from './teams.js';
+import { postText, synopsisText, answerText, nudgeText, caseConsentNudgeText, caseConsentClarifyText, caseLoggedText, transcriptReadyText, callRequestText, cockpitLink, insightCard } from './teams.js';
+import { recordInsight, getInsight, listInsights, attachInsightStream, insightStoreStats } from './insight-store.js';
 import { graphConfigured, createRmCalendarMeeting } from './graph.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -38,6 +39,7 @@ const TEAMS_WEBHOOK_URL = process.env.TEAMS_WEBHOOK_URL || null;
 // critical nudge. Teams remains mandatory; when unset we fall back to the main
 // Teams workflow without changing current deployments.
 const TEAMS_NUDGE_WEBHOOK_URL = process.env.TEAMS_NUDGE_WEBHOOK_URL || TEAMS_WEBHOOK_URL;
+const CRM_BASE_URL = String(process.env.CRM_BASE_URL || '').replace(/\/+$/, '');
 const NUDGE_FRESHNESS_MS = Math.max(2500, Number(process.env.NUDGE_FRESHNESS_MS || 5500));
 const NUDGE_TEAMS_TIMEOUT_MS = Math.max(2000, Number(process.env.NUDGE_TEAMS_TIMEOUT_MS || 5000));
 const FAST_PATH_HEADSTART_MS = Math.max(0, Number(process.env.FAST_PATH_HEADSTART_MS || 300));
@@ -81,7 +83,26 @@ app.get('/speech/token', async (req, res) => {
 
 app.get('/healthz', (req, res) => res.json({
   ok: true, aiReady: aiReady(), grounding: groundingReady(), teamsConfigured: !!TEAMS_WEBHOOK_URL, teamsNudgeConfigured: !!TEAMS_NUDGE_WEBHOOK_URL,
+  cockpitDeepLinks: !!CRM_BASE_URL, insights: insightStoreStats(),
 }));
+
+/* ============================================================================
+   Insight drill-down — the destination of the "Open in RM Cockpit" link on a
+   Teams card. Served from the in-memory ring buffer (sub-50 ms, no DB).
+   ============================================================================ */
+app.get('/insights/stream', (req, res) => {
+  const cid = String(req.query.customer_id || req.query.customerId || '').trim();
+  attachInsightStream(req, res, { customerId: cid });
+});
+app.get('/insights/:eventId', (req, res) => {
+  const entry = getInsight(req.params.eventId);
+  if (!entry) return res.status(404).json({ error: 'unknown insight', eventId: req.params.eventId });
+  res.json(entry);
+});
+app.get('/insights', (req, res) => {
+  const cid = String(req.query.customer_id || req.query.customerId || '').trim();
+  res.json({ ok: true, customerId: cid || null, insights: listInsights({ customerId: cid, limit: req.query.limit }) });
+});
 // Per-customer evidence pack (proxied from the Tool API) â€” handy for debugging.
 app.get('/portfolio', async (req, res) => {
   const cid = (req.query.customer_id || session.customerId || DEFAULT_CUSTOMER_ID).toString();
@@ -124,7 +145,23 @@ app.post('/session/start', async (req, res) => {
       startedSession.primingPromise.then(() => {
         if (session.sessionId !== startedSession.sessionId) return;
         generateSynopsis(cid)
-        .then((synopsis) => synopsis && postText(TEAMS_WEBHOOK_URL, synopsisText(synopsis, getCustomerName(cid)), { kind: 'synopsis', eventId: `${startedSession.sessionId}:synopsis` }))
+        .then((synopsis) => {
+          if (!synopsis) return false;
+          const eventId = `${startedSession.sessionId}:synopsis`;
+          const entry = recordInsight({
+            eventId, kind: 'synopsis', customerId: cid, customerName: getCustomerName(cid),
+            sessionId: startedSession.sessionId,
+            headline: synopsis.headline || `Pre-call synopsis · ${getCustomerName(cid)}`,
+            body: synopsis.summary || '',
+            sources: ['customer_360', 'next_best_action'],
+            extra: { risks: synopsis.risks || [], crossSell: synopsis.crossSell || [] },
+          });
+          const ctx = { customerId: cid, eventId, kind: 'synopsis' };
+          return postText(TEAMS_WEBHOOK_URL, synopsisText(synopsis, getCustomerName(cid), ctx), {
+            kind: 'synopsis', eventId,
+            card: insightCard(entry), deepLink: cockpitLink(cid, eventId, 'synopsis'),
+          });
+        })
         .catch((e) => console.warn('[synopsis async]', e.message));
       });
     }
@@ -161,6 +198,18 @@ function caseStateSnapshot(callSession) {
       last_action: x.lastAction,
       existing_reference: x.existingReference || '',
     })),
+  };
+}
+
+// Compact consent state carried on an insight so the cockpit drawer can show
+// exactly what the customer had (and had not) agreed to at that moment.
+function caseConsentSnapshot(callSession) {
+  const p = callSession?.pendingCaseConsent;
+  return {
+    status: p ? 'pending_customer_permission' : 'no_case_pending',
+    pending_subject: p?.draft?.subject || '',
+    asked_at_turn: p?.askedAtTurn ?? null,
+    cases_registered: (callSession?.caseLog || []).length,
   };
 }
 
@@ -384,7 +433,22 @@ app.post('/transcript', async (req, res) => {
       nudge.runtime = { ...(nudge.runtime || {}), end_to_end_ms: age };
       turnSession.aiEvents.push({ type: 'nudge', turnId, text: nudge.nudge, say: nudge.say, basis: nudge.basis, confidence: nudge.confidence, runtime: nudge.runtime, trigger: latest, timestamp: new Date().toISOString() });
       const eventId = `${turnSessionId}:turn-${turnId}:nudge`;
-      const ok = await postText(TEAMS_NUDGE_WEBHOOK_URL, nudgeText(nudge, latest), { timeoutMs: NUDGE_TEAMS_TIMEOUT_MS, eventId, kind: 'live_nudge' });
+      // Recorded BEFORE the Teams POST so the cockpit's SSE cache is already warm
+      // by the time the RM can physically click the link in the card.
+      const entry = recordInsight({
+        eventId, kind: 'live_nudge', customerId: cid, customerName: getCustomerName(cid),
+        sessionId: turnSessionId, turnId,
+        headline: `${String(nudge.type || 'info').toUpperCase()} nudge · ${getCustomerName(cid)}`,
+        body: nudge.nudge, say: nudge.say, basis: nudge.basis,
+        runtime: { ...(nudge.runtime || {}), confidence: nudge.confidence },
+        sources: [nudge.scenario ? `scenario:${nudge.scenario}` : null, 'fast_nudge_evidence'].filter(Boolean),
+        consent: caseConsentSnapshot(turnSession),
+        trigger: latest,
+      });
+      const ok = await postText(TEAMS_NUDGE_WEBHOOK_URL, nudgeText(nudge, latest, { customerId: cid, eventId, kind: 'live_nudge' }), {
+        timeoutMs: NUDGE_TEAMS_TIMEOUT_MS, eventId, kind: 'live_nudge',
+        card: insightCard(entry), deepLink: cockpitLink(cid, eventId, 'live_nudge'),
+      });
       console.log(`[teams] fast nudge turn-${turnId} posted=${ok} model=${nudge.runtime?.latency_ms || '?'}ms total=${Date.now() - receivedAt}ms`);
       return { posted: ok, reason: ok ? 'posted' : 'teams_failed', latency_ms: Date.now() - receivedAt };
     })
@@ -401,7 +465,20 @@ app.post('/transcript', async (req, res) => {
       if (answer && TEAMS_WEBHOOK_URL && norm(answer) !== norm(turnSession.lastAnswerText)) {
         turnSession.lastAnswerText = answer.text;
         turnSession.aiEvents.push({ type: 'answer', turnId, text: answer.text, runtime: answer.runtime, trigger: latest, timestamp: new Date().toISOString() });
-        posts.push(postText(TEAMS_WEBHOOK_URL, answerText(answer, latest), { kind: 'answer', eventId: `${turnSessionId}:turn-${turnId}:answer` }).then(ok => console.log('[teams] answer posted:', ok)));
+        const answerEventId = `${turnSessionId}:turn-${turnId}:answer`;
+        const answerEntry = recordInsight({
+          eventId: answerEventId, kind: 'answer', customerId: cid, customerName: getCustomerName(cid),
+          sessionId: turnSessionId, turnId,
+          headline: `Answer · ${answer.runtime?.tool ? `${answer.runtime.tool} lookup` : 'grounded response'}`,
+          body: answer.text, runtime: answer.runtime,
+          sources: [answer.runtime?.tool ? `tool:${answer.runtime.tool}` : null, answer.runtime?.operation ? `op:${answer.runtime.operation}` : null].filter(Boolean),
+          consent: caseConsentSnapshot(turnSession),
+          trigger: latest,
+        });
+        posts.push(postText(TEAMS_WEBHOOK_URL, answerText(answer, latest, { customerId: cid, eventId: answerEventId, kind: 'answer' }), {
+          kind: 'answer', eventId: answerEventId,
+          card: insightCard(answerEntry), deepLink: cockpitLink(cid, answerEventId, 'answer'),
+        }).then(ok => console.log('[teams] answer posted:', ok)));
       } else if (answer) console.log('[teams] answer suppressed (duplicate)');
       // Answer cards and future non-live auxiliary cards post concurrently.
       if (posts.length) await Promise.allSettled(posts);
@@ -491,7 +568,23 @@ async function writeCaseToCrm(cid, draft, { live = false, heard = '', customerCo
     category: payload.category, sentiment: payload.sentiment, priority: payload.priority,
     commitments_by_bank: payload.commitments_by_bank, next_follow_up_date: payload.next_follow_up_date,
     customerConsentConfirmed: true, consentTurnId: customerConsent.turnId || '', live };
-  if (TEAMS_WEBHOOK_URL) await postText(TEAMS_WEBHOOK_URL, caseLoggedText(card, heard)).catch(() => {});
+  if (TEAMS_WEBHOOK_URL) {
+    const caseEventId = `${session.sessionId}:case-${caseRef}`;
+    const caseEntry = recordInsight({
+      eventId: caseEventId, kind: 'case_logged', customerId: cid, customerName: getCustomerName(cid),
+      sessionId: session.sessionId, turnId: customerConsent.turnId || '',
+      headline: `Case ${caseRef} · ${card.subject || payload.category}`,
+      body: payload.summary,
+      sources: [`crm_candidate:${cand.candidate_id}`, 'video_call_customer_consent'],
+      consent: { status: 'confirmed_on_later_turn', utterance: String(customerConsent.utterance || '').slice(0, 240), turnId: customerConsent.turnId || '' },
+      trigger: heard,
+      extra: { caseRef, candidateId: cand.candidate_id, category: payload.category, priority: payload.priority, sentiment: payload.sentiment, commitments_by_bank: payload.commitments_by_bank, next_follow_up_date: payload.next_follow_up_date },
+    });
+    await postText(TEAMS_WEBHOOK_URL, caseLoggedText(card, heard, { customerId: cid, eventId: caseEventId, kind: 'case_logged' }), {
+      kind: 'case_logged', eventId: caseEventId,
+      card: insightCard(caseEntry), deepLink: cockpitLink(cid, caseEventId, 'case_logged'),
+    }).catch(() => {});
+  }
   console.log(`[case] logged ${caseRef} (${cand.candidate_id}) for ${cid}${live ? ' [live]' : ''}`);
   return card;
 }

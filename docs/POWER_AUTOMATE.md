@@ -45,6 +45,70 @@ X-Contoso-Message-Kind: nudge|synopsis|call-request   (optional)
 
 ---
 
+## "Open in RM Cockpit" deep links — **no flow changes needed**
+
+Every AI card (nudge, answer, synopsis, consent-gated case) now ends with a line
+like:
+
+```html
+<b>🔎 <a href="https://ca-rmx-dashboard.<env>.azurecontainerapps.io/?customer=CTB-RTL-002&focus=VCALL-AB12CD34%3Aturn-7%3Anudge&kind=live_nudge">Open this nudge in RM Cockpit</a></b> — full evidence, runtime trace and drill-down.
+```
+
+**This is just more HTML inside the existing `text` field.** If your flow already
+maps *Message* to `triggerBody()?['text']`, the link appears and works with
+**zero changes** — nothing to re-import, re-authorise or re-publish.
+
+Clicking it opens the CRM cockpit, selects that customer and opens the contextual
+detail drawer on that exact insight: the full text, the suggested talk-track, the
+internal policy basis, the AI runtime trace (tool, records scanned, latency,
+confidence, model) and the consent state — with drill-down buttons to the leaf
+rows on file and to the matched SOP clauses.
+
+The link resolves against `GET /insights/:eventId` on the video-call app, where
+`eventId` is the same value already sent in the `X-Contoso-Event-Id` header. The
+cockpit also holds an SSE subscription (`GET /insights/stream`) so an open tab has
+usually cached the payload **before** the RM clicks, making the drawer instant.
+
+- The cockpit base URL is derived deterministically by
+  `infra/phase9-videoassist/up.sh` from `$NAME_CA_CRM` plus phase 1's
+  `$CAE_DEFAULT_DOMAIN`, and injected as `CRM_BASE_URL`. Override it by exporting
+  `CRM_BASE_URL` before the deploy.
+- If `CRM_BASE_URL` is unset (e.g. local dev), the extra line is simply omitted
+  and every card is byte-identical to before.
+- The insight buffer is in-memory and bounded (`INSIGHT_STORE_MAX`, default 400),
+  so a link from a long-past call may report "no longer in the live call buffer".
+  The durable copy is always the call record written at `/session/finalize`.
+
+### Optional upgrade path: Adaptive Cards
+
+The POST body now *may* also contain a `card` field:
+
+```jsonc
+{
+  "text": "<b>💡 Nudge · RETENTION</b><br>…",   // unchanged contract
+  "card": { "type": "AdaptiveCard", "version": "1.4", "body": [ … ],
+            "actions": [ { "type": "Action.OpenUrl", "title": "Open in RM Cockpit", "url": "…" } ] },
+  "deepLink": "https://ca-rmx-dashboard…/?customer=…&focus=…"
+}
+```
+
+`card` and `deepLink` are **purely additive**. A flow whose trigger schema only
+declares `text` never sees them, so **existing flows are unaffected** — this is
+deliberately not a hard switch to Adaptive Cards.
+
+To opt in later:
+
+1. Edit the flow trigger's *Request Body JSON Schema* to add
+   `"card": { "type": "object" }`.
+2. Replace **Post message in a chat or channel** with **Post card in a chat or
+   channel**.
+3. Set *Adaptive Card* to `triggerBody()?['card']`.
+
+Keep the HTML path as your fallback: if the card action ever fails to render, the
+same content is still present in `text`.
+
+---
+
 ## 1) Teams nudge flow (`TEAMS_WEBHOOK_URL`)
 
 Create it once; it produces a stable signed URL.
@@ -66,8 +130,9 @@ Optionally build a second, identical flow for live nudges only and use it as
 `TEAMS_NUDGE_WEBHOOK_URL` (the app falls back to `TEAMS_WEBHOOK_URL` if unset).
 
 > **Adaptive Card instead of plain HTML?** Replace step 2 with **Post card in a
-> chat or channel** and build the card from `text`. The app already sends HTML
-> that renders well as a message; a card is a cosmetic upgrade.
+> chat or channel** and bind it to `triggerBody()?['card']`, which the app now
+> sends alongside `text`. See *"Optional upgrade path: Adaptive Cards"* above.
+> The HTML message already renders well, so this is a cosmetic upgrade.
 
 ---
 
@@ -123,6 +188,8 @@ places (do **not** commit real signed URLs):
 | `TEAMS_NUDGE_WEBHOOK_URL` | optional dedicated live-nudge flow (falls back to `TEAMS_WEBHOOK_URL`) |
 | `SCHEDULE_WEBHOOK_URL` | optional real booking → Outlook event/email → returns `joinUrl` |
 | `SCHEDULE_AVAILABILITY_WEBHOOK_URL` | optional real availability lookup for the Step-7 page |
+| `CRM_BASE_URL` | optional override for the "Open in RM Cockpit" deep-link base (auto-derived from `$NAME_CA_CRM` + `$CAE_DEFAULT_DOMAIN`) |
+| `INSIGHT_STORE_MAX` | optional size of the in-memory insight ring buffer (default 400) |
 
 > **Security:** the webhook URL contains a signature (`sig=`) and is effectively a
 > credential — anyone with it can post to your flow. Keep it out of git (it is not

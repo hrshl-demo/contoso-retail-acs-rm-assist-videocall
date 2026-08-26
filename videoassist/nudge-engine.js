@@ -13,6 +13,59 @@ const chatModel = process.env.VOICE_AI_CHAT_DEPLOYMENT || process.env.AZURE_AI_C
 const fastChatModel = process.env.VOICE_AI_FAST_DEPLOYMENT || chatModel;
 const scope = process.env.AZURE_AI_SCOPE || 'https://ai.azure.com/.default';
 
+/* ---------------------------------------------------------------------
+   Reasoning vs non-reasoning request shape.
+
+   Reasoning deployments (gpt-5.x / o-series) reject `temperature` and
+   `max_tokens`; they take `max_completion_tokens` and bill their hidden
+   reasoning tokens out of that same budget. A budget sized for a plain
+   chat model (8 / 70 / 96 tokens) is consumed entirely by reasoning and
+   the response comes back EMPTY — hence the separate budgets below.
+
+   Non-reasoning deployments keep today's exact request shape, so the
+   default gpt-4.1-mini behaviour is unchanged.
+   --------------------------------------------------------------------- */
+const REASONING_DEPLOYMENTS = new Set(
+  String(process.env.AI_REASONING_DEPLOYMENTS || '')
+    .split(',').map(s => s.trim()).filter(Boolean),
+);
+const REASONING_NAME_HINT = /(^|[^a-z0-9])(gpt-5|o1|o3|o4)/i;
+const REASONING_EFFORT = process.env.VOICE_AI_REASONING_EFFORT || 'low';
+// Reasoning tokens are invisible but billed against max_completion_tokens, so every
+// budget needs headroom on top of the visible answer. 6x with a 512 floor keeps the
+// small classifier calls viable without inflating the long generative ones.
+const REASONING_BUDGET_FLOOR = Number(process.env.VOICE_AI_REASONING_MIN_TOKENS || 512);
+const REASONING_BUDGET_MULTIPLIER = Number(process.env.VOICE_AI_REASONING_TOKEN_MULTIPLIER || 6);
+
+export function isReasoningModel(model) {
+  const m = String(model || '');
+  return REASONING_DEPLOYMENTS.has(m) || REASONING_NAME_HINT.test(m);
+}
+
+/**
+ * Build the model-specific half of a chat.completions request body.
+ * @param {string} model    deployment name
+ * @param {object} opts     { maxTokens, temperature, json }
+ */
+export function buildParams(model, { maxTokens, temperature, json } = {}) {
+  const params = { model };
+  if (isReasoningModel(model)) {
+    params.reasoning_effort = REASONING_EFFORT;
+    if (maxTokens != null) {
+      params.max_completion_tokens = Math.max(
+        REASONING_BUDGET_FLOOR,
+        Math.ceil(maxTokens * REASONING_BUDGET_MULTIPLIER),
+      );
+    }
+    // `temperature` is deliberately omitted: reasoning models reject it.
+  } else {
+    if (temperature != null) params.temperature = temperature;
+    if (maxTokens != null) params.max_tokens = maxTokens;
+  }
+  if (json) params.response_format = { type: 'json_object' };
+  return params;
+}
+
 let credential = null;
 let cachedClient = null;
 let cachedClientUntil = 0;
@@ -45,10 +98,9 @@ export async function warmNudgeModel() {
     try {
       const client = await getClient();
       await client.chat.completions.create({
-        model: fastChatModel, temperature: 0, max_tokens: 8,
+        ...buildParams(fastChatModel, { temperature: 0, maxTokens: 8, json: true }),
         messages: [{ role: 'system', content: 'Return only JSON.' }, { role: 'user', content: '{"ready":true}' }],
-        response_format: { type: 'json_object' },
-      }, { timeout: 2500, maxRetries: 0 });
+      }, { timeout: isReasoningModel(fastChatModel) ? 8000 : 2500, maxRetries: 0 });
       return { warmed: true, latency_ms: Date.now() - started, model: fastChatModel };
     } catch (error) {
       console.warn('[nudge-warmup]', error.message);
@@ -380,9 +432,8 @@ export async function generateSynopsis(cid) {
   const client = await getClient();
   const sys = `You are a relationship-manager co-pilot for Contoso Bank's RETAIL segment. Produce a crisp pre-call synopsis for ${name}. Use ONLY supplied evidence. Return STRICT JSON {"headline":"...","summary":"...","risks":["..."],"crossSell":["..."]}. summary under 45 words; max 3 risks and 3 eligible actions. Lead with open disputes or repayment stress. Never recommend a blocked product.`;
   const r = await client.chat.completions.create({
-    model: chatModel, temperature: 0.2, max_tokens: 300,
+    ...buildParams(chatModel, { temperature: 0.2, maxTokens: 300, json: true }),
     messages: [{ role: 'system', content: sys }, { role: 'user', content: `RETAIL evidence:\n${factsToText(facts)}${strat}` }],
-    response_format: { type: 'json_object' },
   });
   return JSON.parse(r.choices[0].message.content);
 }
@@ -868,12 +919,11 @@ Use attrition when the customer threatens to leave or is tempted by another bank
 Critical controls: use existing case references and exact supplied numbers; never produce a generic reassurance when a concrete recovery plan is possible; never promise a refund, waiver, approval, settlement or release; never recommend a duplicate case. A new CRM case is never created from this fast path. Case registration is permitted only after the standard SOP route is exhausted, the RM asks for permission, and a later customer turn clearly confirms permission. Keep output compact.`;
   try {
     const r = await client.chat.completions.create({
-      model: fastChatModel, temperature: 0.02, max_tokens: 96,
+      ...buildParams(fastChatModel, { temperature: 0.02, maxTokens: 96, json: true }),
       messages: [
         { role: 'system', content: sys },
         { role: 'user', content: `STABLE CUSTOMER NUDGE EVIDENCE:\n${entry.fastNudgeEvidenceJson || JSON.stringify(entry.fastNudgeEvidence || buildFastNudgeEvidence(entry))}\n\nRecent customer context (pronouns only): ${String(context || '').slice(0, 300)}\n\nLATEST CUSTOMER TURN:\n${String(latest || '').slice(0, 650)}` },
       ],
-      response_format: { type: 'json_object' },
     }, { timeout: FAST_NUDGE_TIMEOUT_MS, maxRetries: 0 });
     const out = JSON.parse(r.choices[0].message.content || '{}');
     const confidence = Math.max(0, Math.min(1, Number(out.confidence || 0)));
@@ -904,13 +954,12 @@ export async function evaluateCaseConsent(latest, pendingCase, context = '') {
   const sys = `You are a consent classifier for a bank CRM case-registration workflow. The RM has already explained the standard remedy and asked the customer for permission to register the specific formal case described below. Semantically classify ONLY the latest customer turn. Do not use keyword rules. Return STRICT JSON {"status":"affirmative|negative|ambiguous|new_issue","confidence":0.0,"reason":"short explanation"}. Affirmative requires a clear, voluntary yes to registering this case; general frustration, silence, a new question or agreement with facts is not consent.`;
   try {
     const r = await client.chat.completions.create({
-      model: chatModel, temperature: 0, max_tokens: 70,
+      ...buildParams(chatModel, { temperature: 0, maxTokens: 70, json: true }),
       messages: [
         { role: 'system', content: sys },
         { role: 'user', content: `CASE THE RM ASKED PERMISSION TO REGISTER:\n${JSON.stringify({ subject: pendingCase.draft.subject, category: pendingCase.draft.category, summary: pendingCase.draft.summary })}\n\nRecent context: ${String(context || '').slice(0, 240)}\n\nLATEST CUSTOMER TURN:\n${String(latest || '').slice(0, 500)}` },
       ],
-      response_format: { type: 'json_object' },
-    }, { timeout: Math.min(FAST_NUDGE_TIMEOUT_MS, 3500), maxRetries: 0 });
+    }, { timeout: Math.min(FAST_NUDGE_TIMEOUT_MS, isReasoningModel(chatModel) ? 7000 : 3500), maxRetries: 0 });
     const out = JSON.parse(r.choices[0].message.content || '{}');
     return {
       status: ['affirmative','negative','ambiguous','new_issue'].includes(out.status) ? out.status : 'ambiguous',
@@ -997,12 +1046,11 @@ Rules: small talk or an answer to an RM question => question.tool=none and case_
   let out;
   try {
     const r = await client.chat.completions.create({
-      model: chatModel, temperature: 0.1, max_tokens: includeNudge ? 360 : 300,
+      ...buildParams(chatModel, { temperature: 0.1, maxTokens: includeNudge ? 360 : 300, json: true }),
       messages: [
         { role: 'system', content: sys },
         { role: 'user', content: `COMPACT CUSTOMER EVIDENCE:\n${factsToText(facts)}\n\nGATED STRATEGY:\n${strategy}\n\nCASE GOVERNANCE STATE:\n${caseState}\n\nRecent customer context (for pronouns only): "${context}"\n\nLATEST TRANSCRIBED CUSTOMER LINE:\n"${latest}"` },
       ],
-      response_format: { type: 'json_object' },
     });
     out = JSON.parse(r.choices[0].message.content);
   } catch (e) {
@@ -1086,20 +1134,19 @@ export async function generateCaseFromTranscript(cid, transcript) {
   const client = await getClient();
   const sys = `You are logging a CRM interaction from a RETAIL bank video call with ${nm}. Use ONLY the transcript. Return STRICT JSON {"subject":"<=70 chars","summary":"2-4 concrete sentences","category":"Relationship review|Card dispute|Collections|Loan / limit|Service request|Compliance|Retention|Cross-sell","sentiment":"Positive|Neutral|Concerned|Negative","commitments_by_customer":"what was agreed, or None","commitments_by_bank":"what the bank will do, or RM follow-up","next_follow_up_date":"YYYY-MM-DD or ''"}. Never invent a commitment and never use approved/sanctioned.`;
   const r = await client.chat.completions.create({
-    model: chatModel, temperature: 0.1, max_tokens: 420,
+    ...buildParams(chatModel, { temperature: 0.1, maxTokens: 420, json: true }),
     messages: [{ role: 'system', content: sys }, { role: 'user', content: `Captured call transcript:\n${convo}` }],
-    response_format: { type: 'json_object' },
   });
   try { return JSON.parse(r.choices[0].message.content); }
   catch { return { subject: `Video call with ${nm}`, summary: convo.slice(0, 500), sentiment: 'Neutral', category: 'Relationship review', commitments_by_customer: 'To be confirmed', commitments_by_bank: 'RM follow-up', next_follow_up_date: '' }; }
 }
 
 export async function diagnose() {
-  const out = { ok: false, endpoint, deployment: chatModel, toolApiReady: toolApiReady(), planner: 'semantic transcript -> structured tool plan' };
+  const out = { ok: false, endpoint, deployment: chatModel, fastDeployment: fastChatModel, reasoning: isReasoningModel(chatModel), toolApiReady: toolApiReady(), planner: 'semantic transcript -> structured tool plan' };
   if (!endpoint) return { ...out, reason: 'AZURE_AI_ENDPOINT not set' };
   try {
     const client = await getClient();
-    const r = await client.chat.completions.create({ model: chatModel, max_tokens: 5, messages: [{ role: 'user', content: 'Reply with: ok' }] });
+    const r = await client.chat.completions.create({ ...buildParams(chatModel, { maxTokens: 5 }), messages: [{ role: 'user', content: 'Reply with: ok' }] });
     out.sample = r.choices[0].message.content; out.ok = true;
   } catch (e) { return { ...out, error: e.status ? `${e.status} ${e.message}` : e.message }; }
   return out;

@@ -368,6 +368,36 @@ _ensure_deployment "embedding" \
   "$AOAI_EMBED_DEPLOYMENT_NAME" "$AOAI_EMBED_MODEL_NAME" "$AOAI_EMBED_MODEL_FORMAT" \
   "${AOAI_EMBED_MODEL_VERSION:-}" "$AOAI_EMBED_SKU_NAME" "$AOAI_EMBED_SKU_CAPACITY"
 
+# ---------- Voice (live-call) reasoning deployment ----------
+# A THIRD deployment, dedicated to the in-call nudge/answer path. Kept separate from the
+# DEPLOY_TYPE-selected chat deployment so the CRM/backend narration path is unaffected.
+# Preflight first: if the model is not offered on this account/region we want to fail
+# loudly HERE, not silently at the first live nudge during a demo.
+_preflight_model_available() {  # model_name
+  local model="$1" avail
+  avail="$(az cognitiveservices account list-models \
+    --name "$NAME_AISERVICES" -g "$AZ_RG" \
+    --query "[?name=='${model}'] | length(@)" -o tsv 2>/dev/null || echo 0)"
+  [[ "${avail:-0}" -gt 0 ]]
+}
+
+FOUNDRY_VOICE_DEPLOYMENT="$AOAI_CHAT_DEPLOYMENT_NAME"
+if [[ "${VOICE_MODEL_ENABLED:-1}" != "1" ]]; then
+  warn "VOICE_MODEL_ENABLED=0 — skipping the voice deployment; the live-call path reuses $AOAI_CHAT_DEPLOYMENT_NAME."
+elif ! _preflight_model_available "$AOAI_VOICE_MODEL_NAME"; then
+  die "Model '$AOAI_VOICE_MODEL_NAME' is not offered on $NAME_AISERVICES in $AZ_REGION.
+     Inspect what IS available with:
+       az cognitiveservices account list-models --name $NAME_AISERVICES -g $AZ_RG --query \"[].{name:name,version:version}\" -o table
+     Then either pick an available model via AOAI_VOICE_MODEL_NAME (and a NEW
+     AOAI_VOICE_DEPLOYMENT_NAME) in infra/common/env.sh, or set VOICE_MODEL_ENABLED=0
+     to keep the live-call path on $AOAI_CHAT_DEPLOYMENT_NAME."
+else
+  _ensure_deployment "voice" \
+    "$AOAI_VOICE_DEPLOYMENT_NAME" "$AOAI_VOICE_MODEL_NAME" "$AOAI_VOICE_MODEL_FORMAT" \
+    "${AOAI_VOICE_MODEL_VERSION:-}" "$AOAI_VOICE_SKU_NAME" "$AOAI_VOICE_SKU_CAPACITY"
+  FOUNDRY_VOICE_DEPLOYMENT="$AOAI_VOICE_DEPLOYMENT_NAME"
+fi
+
 ok "Voice Live model identifier (managed, no deployment needed): $VOICELIVE_MODEL"
 
 # ---------- Capture outputs ----------
@@ -391,6 +421,7 @@ export FOUNDRY_AOAI_ENDPOINT="https://${NAME_AISERVICES}.services.ai.azure.com/o
 export FOUNDRY_PROJECT_ENDPOINT="https://${NAME_AISERVICES}.services.ai.azure.com/api/projects/${NAME_FOUNDRY_PROJECT}"
 export FOUNDRY_CHAT_DEPLOYMENT="$AOAI_CHAT_DEPLOYMENT_NAME"
 export FOUNDRY_EMBED_DEPLOYMENT="$AOAI_EMBED_DEPLOYMENT_NAME"
+export FOUNDRY_VOICE_DEPLOYMENT="$FOUNDRY_VOICE_DEPLOYMENT"
 export VOICELIVE_MODEL="$VOICELIVE_MODEL"
 export VOICELIVE_WS_ENDPOINT="wss://${NAME_AISERVICES}.services.ai.azure.com/voice-live/realtime?api-version=2025-10-01&model=${VOICELIVE_MODEL}"
 EOF
@@ -404,6 +435,7 @@ CREATED (all deleted with the RG on wipe):
   AIServices account:           $NAME_AISERVICES
   Foundry project:              $NAME_FOUNDRY_PROJECT
   Chat deployment:              $AOAI_CHAT_DEPLOYMENT_NAME   ($AOAI_CHAT_SKU_NAME, capacity $AOAI_CHAT_SKU_CAPACITY)
+  Voice deployment:             $FOUNDRY_VOICE_DEPLOYMENT   ($AOAI_VOICE_MODEL_NAME, $AOAI_VOICE_SKU_NAME, reasoning_effort=$VOICE_AI_REASONING_EFFORT)
   Embed deployment:             $AOAI_EMBED_DEPLOYMENT_NAME   ($AOAI_EMBED_SKU_NAME)
   Voice Live (managed):         $VOICELIVE_MODEL
     via WSS:                    wss://${NAME_AISERVICES}.services.ai.azure.com/voice-live/realtime?api-version=2025-10-01&model=${VOICELIVE_MODEL}

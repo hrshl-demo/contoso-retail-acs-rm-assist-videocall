@@ -1385,6 +1385,27 @@ def assert_no_id_collisions(existing: dict, incoming: dict) -> None:
                          + "\n  ".join(sorted(set(clashes))[:20]))
 
 
+def _partially_appended(existing: dict, customer_ids: set[str]) -> dict[str, list[str]]:
+    """Report customers that appear in some per-customer tables but not all.
+
+    Every persona emits at least one row in each of these tables, so an absence
+    means a previous append died midway rather than being a legitimate shape.
+    """
+    REQUIRED = ["customer_master", "business_profile", "portfolio_assignments", "promoters",
+                "stakeholders", "accounts", "counterparties", "transactions", "daily_balances",
+                "loan_facilities", "daily_limit_utilization", "repayments", "bureau",
+                "financials", "consent", "documents", "service_requests", "audit_log",
+                "crm_tasks", "engagement_threads", "opportunities", "interactions"]
+    rel_by_key = dict(FILE_MAP)
+    out: dict[str, list[str]] = {}
+    for cid in sorted(customer_ids):
+        missing = [rel_by_key.get(k, k) for k in REQUIRED
+                   if not any(r.get("customer_id") == cid for r in existing.get(k, []))]
+        if missing and len(missing) != len(REQUIRED):
+            out[cid] = missing
+    return out
+
+
 def append_customers(args) -> int:
     """APPEND-ONLY mode.
 
@@ -1416,10 +1437,49 @@ def append_customers(args) -> int:
         added.append(spec["customer_id"])
 
     if not added:
+        # A customer is only "already appended" if it is present in EVERY
+        # per-customer table, not just customer_master (which is written first).
+        # Otherwise a half-finished append would silently report success.
+        partial = _partially_appended(existing, {s["customer_id"] for s in specs} & existing_ids)
+        if partial:
+            raise SystemExit(
+                "Refusing to continue — these customers are only PARTIALLY present, which means an "
+                "earlier append did not finish:\n  "
+                + "\n  ".join(f"{cid}: missing from {', '.join(tables)}" for cid, tables in partial.items())
+                + "\n\nRestore the pack (git checkout -- data/csv) and re-run.")
         print(f"[=] Nothing to append — {sorted(existing_ids)} already present.")
         return 0
 
     assert_no_id_collisions(existing, incoming)
+
+    # PRE-FLIGHT every row against the on-disk header BEFORE opening a single
+    # file for append. The write loop is not atomic and writes straight into the
+    # committed pack, so a failure partway through would leave the new customer
+    # present in customer_master (written first) but missing from every table
+    # after the failure point — and the skip-if-present check below would then
+    # report "nothing to append" on the retry, hiding the damage. Validating up
+    # front turns schema drift into a clean refusal that touches nothing.
+    problems = []
+    for key, rel in FILE_MAP:
+        if key in NON_CUSTOMER_TABLES:
+            continue
+        rows = incoming.get(key) or []
+        if not rows:
+            continue
+        path = os.path.join(args.out, rel)
+        header = _read_header(path)
+        if header is None:
+            problems.append(f"{rel}: missing or has no header")
+            continue
+        allowed = set(header)
+        for r in rows:
+            unknown = [k for k in r if k not in allowed]
+            if unknown:
+                problems.append(f"{rel}: generated columns not in the on-disk header: {sorted(unknown)}")
+                break
+    if problems:
+        raise SystemExit("Refusing to append — the pack on disk does not match what the "
+                         "generator produces:\n  " + "\n  ".join(problems))
 
     print(f"[+] Appending {len(added)} customer(s): {', '.join(added)}")
     for key, rel in FILE_MAP:

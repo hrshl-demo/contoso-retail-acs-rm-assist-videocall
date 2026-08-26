@@ -51,7 +51,13 @@ def build_dilo(store: DataStore, rm_id: str = "RM-1042") -> dict:
     pq = priority_queue(store)
     queue = pq.get("queue", []) if isinstance(pq, dict) else pq
 
-    bucket_rank = {"Risk Watch": 0, "Renewal": 1, "Growth": 2}
+    # The queue's own bucket strings are "Risk Watch" | "Growth" | "Renewal Due"
+    # (see services/portfolio.py). "Renewal" never matched, so every renewal
+    # customer silently fell into the default rank and sorted last. That was
+    # invisible while the pack held one customer; with a real book it pushes the
+    # highest-attention renewal cases to the end of the day. Both spellings are
+    # accepted so any older caller keeps working.
+    bucket_rank = {"Risk Watch": 0, "Customer Intervention": 0, "Renewal Due": 1, "Renewal": 1, "Growth": 2}
     ordered = sorted(queue, key=lambda c: (bucket_rank.get(c.get("bucket"), 3),
                                            -int(c.get("relationship_value_score", 0) or 0)))
     slots = ["09:30", "10:30", "11:30", "12:30", "14:30", "15:30", "16:30", "17:00"]

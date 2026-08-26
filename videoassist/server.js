@@ -649,19 +649,67 @@ const CUSTOMER_PROFILES = {
     quickActions: ['Pay card', 'Transfer', 'Statements', 'Rewards'],
     creditScore: 642, creditBand: 'Needs attention',
   },
+  'CTB-RTL-003': {
+    name: 'Meera Iyer', tier: 'Contoso Priority Banking', memberSince: '2019', branch: 'Contoso Bank \u00B7 Pune (Baner)',
+    accounts: [
+      { kind: 'savings', name: 'Savings Account', mask: '\u2022\u2022 3007', primaryLabel: inr(381876), primarySub: 'Available balance' },
+      { kind: 'card', name: 'Contoso Classic Credit Card', mask: '\u2022\u2022 3021', primaryLabel: inr(52500), primarySub: 'Outstanding of ' + inr(300000) + ' limit' },
+      { kind: 'loan', name: 'Personal Loan', mask: '\u2022\u2022 PL01', primaryLabel: inr(410000), primarySub: 'Outstanding of ' + inr(600000) },
+    ],
+    quickActions: ['Pay card', 'Transfer', 'Statements', 'Rewards'],
+    creditScore: 771, creditBand: 'Good',
+  },
+  'CTB-RTL-004': {
+    name: 'Imran Qureshi', tier: 'Contoso Priority Banking', memberSince: '2020', branch: 'Contoso Bank \u00B7 Pune (Hadapsar)',
+    accounts: [
+      { kind: 'savings', name: 'Savings Account', mask: '\u2022\u2022 4014', primaryLabel: inr(172407), primarySub: 'Available balance' },
+      { kind: 'card', name: 'Contoso Classic Credit Card', mask: '\u2022\u2022 4038', primaryLabel: inr(132000), primarySub: 'Outstanding of ' + inr(300000) + ' limit' },
+      { kind: 'loan', name: 'Personal Loan', mask: '\u2022\u2022 PL01', primaryLabel: inr(410000), primarySub: 'Outstanding of ' + inr(600000) },
+    ],
+    quickActions: ['Pay card', 'Transfer', 'Statements', 'Rewards'],
+    creditScore: 694, creditBand: 'Fair',
+  },
+  'CTB-RTL-005': {
+    name: 'Anita Deshmukh', tier: 'Contoso Priority Banking', memberSince: '2015', branch: 'Contoso Bank \u00B7 Pune (Aundh)',
+    accounts: [
+      { kind: 'savings', name: 'Savings Account', mask: '\u2022\u2022 5002', primaryLabel: inr(431011), primarySub: 'Available balance' },
+      { kind: 'card', name: 'Contoso Classic Credit Card', mask: '\u2022\u2022 5049', primaryLabel: inr(52500), primarySub: 'Outstanding of ' + inr(300000) + ' limit' },
+      { kind: 'loan', name: 'Personal Loan', mask: '\u2022\u2022 PL01', primaryLabel: inr(410000), primarySub: 'Outstanding of ' + inr(600000) },
+    ],
+    quickActions: ['Pay card', 'Transfer', 'Statements', 'Rewards'],
+    creditScore: 771, creditBand: 'Good',
+  },
 };
 function customerProfile(cid) {
-  const base = CUSTOMER_PROFILES[cid] || CUSTOMER_PROFILES['CTB-RTL-002'];
+  // NEVER fall back to another customer's financials. This map used to default
+  // to Rakesh for any unknown id, which was invisible while he was the only
+  // customer in the pack — but the moment the cockpit could hand a different
+  // customer to this portal, it rendered THEIR name on top of HIS balances,
+  // card outstanding and credit score. On a banking surface that is the worst
+  // possible failure, so an unknown id now gets a name-only profile with no
+  // figures at all (bank.js already renders that state cleanly).
+  const base = CUSTOMER_PROFILES[cid];
+  const primed = getCustomerName(cid);
+  if (!base) {
+    const name = (primed && primed !== cid) ? primed : 'Contoso customer';
+    console.warn(`[portal] no baked profile for ${cid} — serving a figure-free profile.`);
+    return {
+      customerId: cid, name, greetingName: String(name).split(/\s+/)[0] || name,
+      tier: 'Contoso Bank', memberSince: '',
+      rm: { name: rmCustomerName(), title: 'Your Relationship Manager', branch: 'Contoso Bank' },
+      accounts: [], quickActions: ['Transfer', 'Statements'],
+      creditScore: null, creditBand: '', profileAvailable: false,
+    };
+  }
   // getCustomerName returns the id itself before the customer is primed — prefer the
   // baked display name so the portal always shows a real name.
-  const primed = getCustomerName(cid);
   const name = (primed && primed !== cid) ? primed : base.name;
   return {
     customerId: cid, name, greetingName: String(name).split(/\s+/)[0] || name,
     tier: base.tier, memberSince: base.memberSince,
     rm: { name: rmCustomerName(), title: 'Your Relationship Manager', branch: base.branch },
     accounts: base.accounts, quickActions: base.quickActions,
-    creditScore: base.creditScore, creditBand: base.creditBand,
+    creditScore: base.creditScore, creditBand: base.creditBand, profileAvailable: true,
   };
 }
 

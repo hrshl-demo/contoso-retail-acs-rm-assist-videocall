@@ -137,10 +137,21 @@ svg{width:100%;height:100%;stroke:currentColor;stroke-width:1.9;stroke-linecap:r
 .call-name{font-weight:800;font-size:18px;color:var(--text)}
 .call-role{font-size:12.5px;color:var(--dim)}
 
-/* Ring countdown */
-.ring{width:132px;height:132px;border-radius:50%;margin:6px auto 16px;display:grid;place-items:center;
-  background:conic-gradient(var(--green) var(--pct,0%),var(--track) 0);position:relative;transition:background .9s linear}
-.ring-inner{width:106px;height:106px;border-radius:50%;background:var(--surface);display:grid;place-items:center;flex-direction:column;box-shadow:inset 0 0 0 1px var(--line)}
+/* Ring countdown — an SVG progress arc replaces the stepped conic gradient, so
+   the sweep is continuous rather than jumping once a second. `--pct` is still
+   set by bank.js and kept for backwards compatibility. */
+.ring{width:132px;height:132px;border-radius:50%;margin:6px auto 16px;display:grid;place-items:center;position:relative}
+.rx-ring{position:absolute;inset:0;width:132px;height:132px;transform:rotate(-90deg)}
+.rx-ring-track{fill:none;stroke:var(--track);stroke-width:11}
+.rx-ring-bar{fill:none;stroke:var(--green);stroke-width:11;stroke-linecap:round;
+  stroke-dasharray:376.99;stroke-dashoffset:376.99;transition:stroke-dashoffset .18s linear,stroke .4s ease}
+.ring.is-final .rx-ring-bar{stroke:#e0a33a;animation:rxRingPulse 1s ease-in-out infinite}
+.ring.is-final .ring-time{color:#c2851f}
+@keyframes rxRingPulse{50%{opacity:.55}}
+.ring.is-done .rx-ring-bar{stroke:var(--green);animation:none}
+.ring.is-done .ring-inner{animation:rxRingPop .5s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes rxRingPop{0%{transform:scale(1)}45%{transform:scale(1.07)}100%{transform:scale(1)}}
+.ring-inner{width:106px;height:106px;border-radius:50%;background:var(--surface);display:grid;place-items:center;flex-direction:column;box-shadow:inset 0 0 0 1px var(--line);position:relative;z-index:1}
 .ring-time{font-size:30px;font-weight:800;letter-spacing:-.02em;color:var(--text)}
 .wait-title{font-weight:700;font-size:16px;margin-bottom:14px;color:var(--text)}
 .steps{list-style:none;text-align:left;max-width:280px;margin:0 auto 16px;display:grid;gap:9px}
@@ -165,3 +176,9 @@ svg{width:100%;height:100%;stroke:currentColor;stroke-width:1.9;stroke-linecap:r
 .cancel{margin-top:16px;background:none;border:none;color:var(--faint);font:inherit;font-size:13px;cursor:pointer;text-decoration:underline}
 
 .hide{display:none!important}
+
+/* Respect the OS "reduce motion" preference across everything on this page. */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  .rx-ring-bar{transition:none!important}
+}

@@ -44,6 +44,21 @@
   .pickline{color:var(--dim);font-size:13px;margin-top:10px;min-height:18px}
   .conf{display:flex;gap:14px;align-items:flex-start}
   .conf .ic{width:42px;height:42px;border-radius:12px;background:#0f2e22;border:1px solid #1d5740;display:grid;place-items:center;color:var(--green);font-size:20px;flex:none}
+/* Booking success: the ring draws, then the tick strokes in. */
+.rx-check svg{width:26px;height:26px;overflow:visible}
+.rx-check-ring{fill:none;stroke:var(--green);stroke-width:2.6;opacity:.4;
+  stroke-dasharray:107;stroke-dashoffset:107;transform:rotate(-90deg);transform-origin:50% 50%;
+  animation:rxCheckRing .5s cubic-bezier(.3,.9,.4,1) forwards}
+.rx-check-tick{fill:none;stroke:var(--green);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round;
+  stroke-dasharray:30;stroke-dashoffset:30;animation:rxCheckTick .34s cubic-bezier(.3,.9,.4,1) .34s forwards}
+.rx-check{animation:rxCheckPop .45s cubic-bezier(.2,.9,.3,1.25) .5s both}
+@keyframes rxCheckRing{to{stroke-dashoffset:0}}
+@keyframes rxCheckTick{to{stroke-dashoffset:0}}
+@keyframes rxCheckPop{0%{transform:scale(1)}45%{transform:scale(1.12)}100%{transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){
+  .rx-check,.rx-check-ring,.rx-check-tick{animation:none!important}
+  .rx-check-ring,.rx-check-tick{stroke-dashoffset:0}
+}
   .status{font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;padding:4px 9px;border-radius:999px}
   .status.req{color:var(--gold);background:#241d0c;border:1px solid #5a4a22}
   .status.ready{color:var(--green);background:#0f2e22;border:1px solid #1d5740}
@@ -85,7 +100,9 @@
       <p class="sub">We’ve let <span id="cName">your RM</span> know. Keep this page handy — when your RM starts the call, a <b>Join</b> button appears here. You can also return to this link anytime.</p>
       <div class="card">
         <div class="conf">
-          <div class="ic">✓</div>
+          <div class="ic rx-check" aria-hidden="true">
+            <svg viewBox="0 0 40 40"><circle class="rx-check-ring" cx="20" cy="20" r="17"></circle><path class="rx-check-tick" d="M12.5 20.5 L18 26 L28 14.5"></path></svg>
+          </div>
           <div style="flex:1">
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
               <b id="cWhen" style="font-size:17px">—</b>

@@ -95,7 +95,13 @@
 
       <!-- scheduling phase -->
       <div id="phaseWait">
-        <div class="ring" id="ring"><div class="ring-inner"><span class="ring-time" id="ringTime">1:00</span></div></div>
+        <div class="ring" id="ring">
+          <svg class="rx-ring" viewBox="0 0 132 132" aria-hidden="true">
+            <circle class="rx-ring-track" cx="66" cy="66" r="60"></circle>
+            <circle class="rx-ring-bar" id="ringBar" cx="66" cy="66" r="60"></circle>
+          </svg>
+          <div class="ring-inner"><span class="ring-time" id="ringTime">1:00</span></div>
+        </div>
         <div class="wait-title">Setting up your secure video call…</div>
         <ul class="steps" id="steps">
           <li data-k="notify" class="doing">Notifying your RM in Microsoft Teams</li>

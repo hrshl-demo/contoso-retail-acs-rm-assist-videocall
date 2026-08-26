@@ -35,3 +35,55 @@ button,input{font:inherit}
 @media(max-width:390px){.setup-copy h1{font-size:24px}.tile.self{width:88px;right:14px;bottom:14px}.controls{gap:12px}.ctrl .ic{padding:10px}.pill{max-width:120px}.pill span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 @media(orientation:landscape) and (max-height:520px) and (max-width:920px){.setup{display:none}body[data-phase="idle"] .setup{display:block}.stage{min-height:calc(100dvh - 84px)}.tile:not(.self) .frame{min-height:calc(100dvh - 130px)}.topbar{position:absolute;left:10px;right:10px;background:transparent;border:0}.wordmark{color:#fff}.pill{background:rgba(255,255,255,.9)}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ==========================================================================
+   rx- : Phase 4 visual polish. Additive only — no existing rule is changed.
+   All animation here is inside the existing prefers-reduced-motion block
+   above, which disables every animation and transition globally.
+   ========================================================================== */
+
+/* --- active-speaker ring, driven by REAL audio -----------------------------
+   .rx-speaking is toggled from ACS isSpeakingChanged (remote) and a Web Audio
+   AnalyserNode on the microphone (local). Nothing here animates on a timer. */
+.frame{transition:border-color .28s ease,box-shadow .28s ease,transform .28s ease}
+.frame.rx-speaking{border-color:rgba(113,198,188,.9);box-shadow:0 0 0 2px rgba(113,198,188,.55),0 0 22px 4px rgba(113,198,188,.32)}
+.frame.rx-speaking::after{content:"";position:absolute;inset:-3px;border-radius:inherit;pointer-events:none;border:2px solid rgba(113,198,188,.45);animation:rxRing 1.6s ease-out infinite}
+@keyframes rxRing{0%{opacity:.75;transform:scale(1)}70%{opacity:0;transform:scale(1.035)}100%{opacity:0;transform:scale(1.035)}}
+/* The ring intensity tracks measured loudness, so it reflects the actual voice. */
+.frame.rx-speaking{--rx-level:0}
+.tile.self .frame.rx-speaking{box-shadow:0 0 0 2px rgba(113,198,188,.6),0 0 calc(10px + var(--rx-level) * 26px) rgba(113,198,188,.4)}
+
+/* --- remote tile skeleton while we wait for the RM ------------------------- */
+.rx-wait{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;width:100%;height:100%;padding:22px}
+.rx-wait-av{width:56px;height:56px;border-radius:50%}
+.rx-wait-lines{display:flex;flex-direction:column;gap:8px;align-items:center;width:min(230px,72%)}
+.rx-wait-line{height:9px;border-radius:6px;width:100%}
+.rx-wait-line.short{width:58%}
+.rx-sk{background:linear-gradient(100deg,rgba(255,255,255,.055) 30%,rgba(255,255,255,.16) 50%,rgba(255,255,255,.055) 70%);background-size:220% 100%;animation:rxShimmer 1.55s ease-in-out infinite}
+@keyframes rxShimmer{0%{background-position:140% 0}100%{background-position:-40% 0}}
+.rx-wait-label{margin:2px 0 0;font-size:11px;letter-spacing:.01em;color:#8295a6}
+.rx-wait-dots::after{content:"";animation:rxDots 1.4s steps(4,end) infinite}
+@keyframes rxDots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+
+/* --- smooth arrival of the RM's video -------------------------------------- */
+.frame video{opacity:1;transition:opacity .38s ease,transform .38s ease}
+.frame.has-video{animation:rxJoin .42s cubic-bezier(.22,.68,.35,1) both}
+@keyframes rxJoin{from{opacity:.35;transform:scale(.982)}to{opacity:1;transform:scale(1)}}
+
+/* --- dark variant, driven by the existing :root custom properties ----------
+   Only the light-surface tokens are re-pointed; the brand teal/navy and every
+   component rule keeps working unchanged. */
+@media(prefers-color-scheme:dark){
+  :root{
+    --ink:#e8eef3;--ink-2:#c2d0dc;--muted:#93a4b4;--faint:#7b8b9a;
+    --page:#0c1826;--paper:#122236;--line:#22374d;--line-strong:#2f4a63;
+    --teal-soft:#12302e;--shadow:0 18px 52px rgba(0,0,0,.5);
+  }
+  body{background:radial-gradient(circle at 88% 0,rgba(40,124,120,.16),transparent 30%),linear-gradient(180deg,#0e1c2c,#0a1420)}
+  .setup{background:rgba(18,34,54,.94);box-shadow:0 10px 34px rgba(0,0,0,.4)}
+  .setup-controls input{background:#0f1e2f;color:var(--ink)}
+  .pill{background:rgba(18,34,54,.86)}
+  .logbox pre,.debug{background:var(--paper);color:var(--ink-2)}
+  .rx-wait-label{color:var(--muted)}
+}
+

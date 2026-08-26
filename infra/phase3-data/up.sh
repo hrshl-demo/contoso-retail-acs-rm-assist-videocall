@@ -23,6 +23,29 @@ CSV_COUNT="$( { find data/csv -name '*.csv' 2>/dev/null || true; } | wc -l | tr 
 [[ "$CSV_COUNT" == "0" ]] && die "No CSVs found under data/csv. The data pack ships with this repo — ensure data/csv was included."
 ok "Found $CSV_COUNT committed CSV file(s)."
 
+# ---------- OPT-IN regeneration (off by default) ----------
+# Deploys must be reproducible and offline, so the COMMITTED pack is the default
+# source of truth and this phase only validates it. Regeneration is a deliberate,
+# explicit act:
+#
+#   REGENERATE_SEED=1 bash infra/phase3-data/up.sh              # 1 customer (Rakesh only)
+#   REGENERATE_SEED=1 SEED_CUSTOMERS=3 bash infra/phase3-data/up.sh
+#
+# The generator is fixed-seed, stdlib-only and makes no network calls, so the
+# result is byte-identical for the same inputs. Rakesh (CTB-RTL-002) and every
+# invariant his demo narrative depends on are preserved regardless of count.
+if [[ "${REGENERATE_SEED:-0}" == "1" ]]; then
+  warn "REGENERATE_SEED=1 — regenerating data/csv from infra/phase3-data/generate_seed.py."
+  warn "This OVERWRITES the committed pack. Review 'git diff data/' before committing."
+  python3 "$SCRIPT_DIR/generate_seed.py" \
+    --customers "${SEED_CUSTOMERS:-1}" \
+    --seed "${SEED_STRING:-contoso-retail-v2}" \
+    || die "Seed generation failed."
+  ok "Regenerated the retail pack (${SEED_CUSTOMERS:-1} customer(s))."
+else
+  log "Using the committed data pack (set REGENERATE_SEED=1 to regenerate)."
+fi
+
 # ---------- Validate internal consistency (deterministic source of truth) ----------
 log "Validating internal consistency (blueprint 6.3) ..."
 python3 "$SCRIPT_DIR/validate_seed.py"

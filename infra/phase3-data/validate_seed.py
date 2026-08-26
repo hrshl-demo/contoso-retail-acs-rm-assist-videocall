@@ -13,9 +13,12 @@ Checks (retail):
   4. Bounce cross-reference: every cheque_returns (EMI/auto-debit bounce) row has
      a matching is_return=Y transaction.
   5. Repayments cross-reference: every EMI repayment links to an EMI debit.
-  6. Rakesh stress story (single-customer pack): CTB-RTL-002 income down YoY,
-     >=2 EMI bounces, sub-700 CIBIL, at least one disputed (Unauthorized) txn,
-     and no other customer_ids left anywhere in the pack.
+  6. Rakesh stress story: CTB-RTL-002 must be present with income down YoY,
+     >=2 EMI bounces, sub-700 CIBIL, the disputed Rs 48,500 GlobalMart charge,
+     SMA-1 on the personal loan and card utilisation opening in the 82-92% band.
+  7. Persona awareness: additional customers are allowed. Each is validated
+     against the persona it declares in portfolio_assignments.priority_hint
+     (stress | stable | recovering).
 """
 from __future__ import annotations
 import csv
@@ -137,7 +140,9 @@ def check_repayments():
     else: ok(f"All {len(rpys)} repayments cross-reference EMI transactions.")
 
 def check_rakesh_stress_story():
-    """Single-customer pack: validate ONLY Rakesh (CTB-RTL-002)'s stress narrative."""
+    """Rakesh (CTB-RTL-002) must be present with EVERY invariant the demo
+    narrative depends on. Additional customers are permitted; each is checked
+    against the persona it declares in portfolio_assignments.priority_hint."""
     RAKESH = "CTB-RTL-002"
     fin = load("04_financials/financial_statements_summary.csv")
     b = next((f for f in fin if f["customer_id"] == RAKESH), {})
@@ -163,12 +168,94 @@ def check_rakesh_stress_story():
     if not disputed: err("Rakesh should have a disputed (Unauthorized) transaction.")
     else: ok(f"Rakesh has {len(disputed)} disputed transaction(s).")
 
-    # This is a single-customer demo pack: no other customer_ids may remain.
-    cust = {r["customer_id"] for r in load("01_master_data/customer_master.csv")}
-    if cust != {RAKESH}:
-        err(f"customer_master should contain only {RAKESH}; found {sorted(cust)}.")
+    # The Rs 48,500 GlobalMart charge is quoted verbatim by the live-call nudges.
+    if not any(abs(float(t["amount_inr"]) - 48500.0) < 0.01 and "GlobalMart" in t.get("counterparty_name", "")
+               for t in disputed):
+        err("Rakesh's disputed transaction should be the Rs 48,500 GlobalMart Online charge.")
     else:
-        ok(f"Single-customer pack confirmed ({RAKESH} only).")
+        ok("Rakesh's disputed transaction is the Rs 48,500 GlobalMart charge.")
+
+    # SMA-1 on the personal loan drives the collections / restructuring plays.
+    facs = load("03_credit/loan_facilities.csv")
+    if not any(f["customer_id"] == RAKESH and "SMA-1" in (f.get("facility_status") or "") for f in facs):
+        err("Rakesh's personal loan should carry an SMA-1 facility_status.")
+    else:
+        ok("Rakesh's personal loan is flagged SMA-1.")
+
+    # Card utilisation must open inside the 82-92% stress band.
+    util = [u for u in load("03_credit/daily_limit_utilization.csv") if u["customer_id"] == RAKESH]
+    if not util:
+        err("Rakesh has no daily_limit_utilization rows.")
+    else:
+        first = float(util[0]["utilization_pct"])
+        peak = max(float(u["utilization_pct"]) for u in util)
+        if not (82.0 <= first <= 92.0):
+            err(f"Rakesh card utilisation should open in the 82-92% band (got {first}%).")
+        elif peak < 82.0:
+            err(f"Rakesh card utilisation peak should stay at/above 82% (got {peak}%).")
+        else:
+            ok(f"Rakesh card utilisation opens at {first}% (82-92% band), peaks at {peak}%.")
+
+    # ---- persona-aware multi-customer check ----------------------------------
+    # The pack may carry more than one customer. Rakesh must be there and must
+    # declare the 'stress' persona; every other customer is validated against
+    # whatever persona IT declares.
+    cust = {r["customer_id"] for r in load("01_master_data/customer_master.csv")}
+    if RAKESH not in cust:
+        err(f"customer_master must contain {RAKESH} (the demo narrative depends on it).")
+        return
+    personas = {r["customer_id"]: (r.get("priority_hint") or "").strip().lower()
+                for r in load("01_master_data/portfolio_assignments.csv")}
+    if personas.get(RAKESH) != "stress":
+        err(f"{RAKESH} must declare the 'stress' persona (got '{personas.get(RAKESH)}').")
+    else:
+        ok(f"{RAKESH} declares the 'stress' persona.")
+
+    others = sorted(cust - {RAKESH})
+    if not others:
+        ok(f"Single-customer pack ({RAKESH} only).")
+        return
+
+    bounces_by_cust = defaultdict(int)
+    for c in crs:
+        bounces_by_cust[c["customer_id"]] += 1
+    fin_by_cust = {f["customer_id"]: f for f in fin}
+    score_by_cust = {x["customer_id"]: int(float(x.get("score", 0))) for x in bureau}
+    # persona -> (min_score, max_score, max_bounces, income_must_grow)
+    RULES = {
+        "stress": (0, 699, 99, False),
+        "stable": (740, 900, 0, True),
+        "recovering": (660, 739, 1, True),
+    }
+    checked = 0
+    for c in others:
+        persona = personas.get(c, "")
+        if persona not in RULES:
+            err(f"{c} declares unknown persona '{persona}' "
+                f"(portfolio_assignments.priority_hint must be one of {sorted(RULES)}).")
+            continue
+        lo, hi, max_bnc, must_grow = RULES[persona]
+        score = score_by_cust.get(c)
+        if score is None:
+            err(f"{c} ({persona}) missing from bureau_summary.")
+            continue
+        if not (lo <= score <= hi):
+            err(f"{c} declares '{persona}' but CIBIL {score} is outside the {lo}-{hi} band.")
+            continue
+        if bounces_by_cust[c] > max_bnc:
+            err(f"{c} declares '{persona}' but has {bounces_by_cust[c]} bounce(s) (max {max_bnc}).")
+            continue
+        f = fin_by_cust.get(c)
+        if not f:
+            err(f"{c} ({persona}) missing from financial_statements_summary.")
+            continue
+        grew = float(f.get("turnover_inr", 0)) > float(f.get("turnover_prev_inr", 0))
+        if must_grow and not grew:
+            err(f"{c} declares '{persona}' but income did not grow year-on-year.")
+            continue
+        checked += 1
+    if checked:
+        ok(f"{checked} additional customer(s) consistent with their declared persona.")
 
 def main():
     print(f"[+] Validating RETAIL dataset in: {DATA}\n")

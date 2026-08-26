@@ -39,6 +39,23 @@ done
   || die "Incomplete prior outputs (need ACR_LOGIN_SERVER, UAMI_ID, UAMI_CLIENT_ID, TOOLAPI_URL)."
 ok "Loaded phase 1 + 4 outputs (TOOLAPI_URL=$TOOLAPI_URL)"
 
+# --- CRM cockpit base URL (deterministic; breaks the phase9 <-> phase6 ordering knot) --
+# phase6 runs AFTER phase9 and consumes this app's outputs.env, so we cannot read the
+# CRM's FQDN from phase6. We don't need to: the Container App name is a constant in
+# infra/common/env.sh ($NAME_CA_CRM) and the environment's default domain is a phase1
+# output ($CAE_DEFAULT_DOMAIN), so the FQDN is fully determined the moment phase1 ends.
+if [[ -n "${CRM_BASE_URL:-}" ]]; then
+  ok "Using CRM_BASE_URL override: $CRM_BASE_URL"
+elif [[ -n "${CAE_DEFAULT_DOMAIN:-}" ]]; then
+  CRM_BASE_URL="https://${NAME_CA_CRM}.${CAE_DEFAULT_DOMAIN}"
+  ok "Derived CRM cockpit URL for Teams deep links: $CRM_BASE_URL"
+else
+  CRM_BASE_URL=""
+  warn "CAE_DEFAULT_DOMAIN missing from phase1 outputs — Teams nudges will post without a cockpit deep link."
+fi
+# Tighten CORS from the historical '*' to the CRM origin once it is known.
+CRM_ALLOWED_ORIGIN="${CRM_ALLOWED_ORIGIN:-${CRM_BASE_URL:-*}}"
+
 # --- Video Assist ACS resource (video tokens; no purchased number) ------------
 log "Ensuring ACS resource '$ACS_NAME' (video calling) ..."
 if ! az communication show -n "$ACS_NAME" -g "$AZ_RG" -o none 2>/dev/null; then
@@ -99,7 +116,9 @@ ENVVARS=( "ACS_CONNECTION_STRING=secretref:acs-conn"
           "FAST_PATH_HEADSTART_MS=$FAST_PATH_HEADSTART_MS"
           "NUDGE_FRESHNESS_MS=$NUDGE_FRESHNESS_MS"
           "NUDGE_TEAMS_TIMEOUT_MS=$NUDGE_TEAMS_TIMEOUT_MS"
-          "NUDGE_MIN_CONFIDENCE=$NUDGE_MIN_CONFIDENCE" )
+          "NUDGE_MIN_CONFIDENCE=$NUDGE_MIN_CONFIDENCE"
+          "CRM_BASE_URL=$CRM_BASE_URL"
+          "CRM_ALLOWED_ORIGIN=$CRM_ALLOWED_ORIGIN" )
 
 # Teams / Power Automate webhook (in-call synopsis + nudges). Optional: if unset the
 # call still works and nudges simply won't post to Teams.

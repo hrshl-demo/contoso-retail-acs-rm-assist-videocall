@@ -134,6 +134,207 @@ function animateCounters(scope){
 function skelCards(n){ let s=""; for(let i=0;i<(n||3);i++){ s+=`<div class="skel-card"><div class="skel skel-line" style="width:42%"></div><div class="skel skel-line" style="width:88%"></div><div class="skel skel-line" style="width:70%"></div></div>`; } return s; }
 function skelKpis(){ return `<div class="skel-row">${Array(4).fill('<div class="skel skel-card" style="height:78px"></div>').join("")}</div>`; }
 
+/* ============================================================================
+   LIVE INSIGHT DEEP LINK — Teams nudge → this cockpit's detail drawer.
+
+   A Teams card carries ?customer=<id>&focus=<eventId>&kind=<kind>. On boot we
+   select that customer through the EXISTING selectCustomer() path and open the
+   insight in the EXISTING RX.drawer, using the same {title, subtitle, badges,
+   sections, actions} shape as openStrategyPlay(). No new UI surface.
+
+   The SSE channel means an already-open cockpit tab has cached the payload
+   before the RM can physically click the link, so the drawer is instant. A cold
+   tab falls back to a direct fetch.
+   ============================================================================ */
+const RXI = {
+  cache: new Map(),        // eventId -> insight
+  order: [],               // eventIds, oldest first
+  latest: null,            // most recent live_nudge (for the palette jump)
+  _es: null, _customerId: null,
+
+  base(){ return (typeof VIDEOASSIST_URL !== 'undefined' ? VIDEOASSIST_URL : '').replace(/\/+$/, ''); },
+  ready(){ const b = this.base(); return !!b && !b.includes('invalid.local'); },
+
+  put(entry){
+    if(!entry || !entry.eventId) return;
+    if(!this.cache.has(entry.eventId)) this.order.push(entry.eventId);
+    this.cache.set(entry.eventId, entry);
+    while(this.order.length > 200){ this.cache.delete(this.order.shift()); }
+    if(entry.kind === 'live_nudge') this.latest = entry;
+    try{ onLiveInsight(entry); }catch(e){}
+  },
+
+  /* Pre-cache insights as they happen. Auto-reconnects via EventSource, and we
+     re-open on hard errors so a container restart doesn't silently kill it. */
+  connect(cid){
+    if(!this.ready() || typeof EventSource === 'undefined') return;
+    if(this._es && this._customerId === cid) return;
+    this.disconnect();
+    this._customerId = cid || null;
+    const url = this.base() + '/insights/stream' + (cid ? `?customer_id=${encodeURIComponent(cid)}` : '');
+    try{
+      const es = this._es = new EventSource(url);
+      es.addEventListener('insight', (e)=>{ try{ RXI.put(JSON.parse(e.data)); }catch(_){} });
+      es.addEventListener('ready', ()=> console.debug('[insights] stream ready'));
+      es.onerror = ()=>{
+        // EventSource retries on its own; only intervene when it gives up.
+        if(es.readyState === 2){ setTimeout(()=>{ if(RXI._es === es){ RXI._es = null; RXI.connect(RXI._customerId); } }, 4000); }
+      };
+    }catch(e){ console.debug('[insights] stream unavailable:', e.message); }
+  },
+  disconnect(){ try{ this._es && this._es.close(); }catch(e){} this._es = null; },
+
+  async resolve(eventId){
+    if(!eventId) return null;
+    if(this.cache.has(eventId)) return this.cache.get(eventId);
+    if(!this.ready()) return null;
+    const r = await fetch(`${this.base()}/insights/${encodeURIComponent(eventId)}`);
+    if(!r.ok) throw new Error(r.status === 404 ? 'This insight is no longer in the live call buffer.' : `insight lookup failed (${r.status})`);
+    const entry = await r.json();
+    this.put(entry);
+    return entry;
+  },
+};
+
+const RXI_KIND_LABEL = { live_nudge:'Live nudge', answer:'Grounded answer', synopsis:'Pre-call synopsis', case_logged:'CRM case registered' };
+
+function rxiRuntimeRows(r){
+  r = r || {};
+  const rows = [
+    ['Tool', r.tool || '—'],
+    ['Records scanned', r.rows_scanned != null ? Number(r.rows_scanned).toLocaleString('en-IN') : '—'],
+    ['AI latency', r.latency_ms != null ? `${r.latency_ms} ms` : '—'],
+    ['End to end', r.end_to_end_ms != null ? `${r.end_to_end_ms} ms to Teams` : '—'],
+    ['Confidence', r.confidence != null ? `${Math.round(r.confidence*100)}%` : '—'],
+    ['Model', r.model || '—'],
+  ];
+  return `<dl class="rx-kv">${rows.map(x=>`<dt>${esc(x[0])}</dt><dd>${esc(x[1])}</dd>`).join('')}</dl>`;
+}
+
+// Render one insight into the existing contextual drawer.
+function openInsight(entry, opts = {}){
+  if(!entry) return;
+  const kindLabel = RXI_KIND_LABEL[entry.kind] || 'Live AI insight';
+  const conf = entry.runtime && entry.runtime.confidence != null ? Math.round(entry.runtime.confidence*100) : null;
+  const badges = [
+    RX.badge(kindLabel, entry.kind==='live_nudge' ? 'warn' : (entry.kind==='case_logged' ? 'pos' : 'accent'), '&#9679;'),
+    conf != null ? RX.confidence(conf) : '',
+    entry.consent && entry.consent.status ? RX.badge(String(entry.consent.status).replace(/_/g,' '), entry.consent.status==='confirmed_on_later_turn'?'pos':'', '&#128737;') : '',
+  ].filter(Boolean);
+
+  const sections = [];
+  if(entry.trigger) sections.push({label:'What the customer said', html:`<div class="rx-block why">&ldquo;${esc(entry.trigger)}&rdquo;</div>`});
+  if(entry.body) sections.push({label:'The insight', html:`<div class="rx-block why">${esc(entry.body)}</div>`});
+  if(entry.say) sections.push({label:'Say to the customer', html:`<div class="rx-block say">&ldquo;${esc(entry.say)}&rdquo;</div>`});
+  if(entry.basis) sections.push({label:'Policy basis (internal)', html:`<div class="rx-block basis">${esc(entry.basis)}</div>`});
+  if(entry.extra && entry.extra.risks && entry.extra.risks.length) sections.push({label:'Risks & issues', html:`<div class="rx-block dont">${entry.extra.risks.map(esc).join('<br>')}</div>`});
+  if(entry.extra && entry.extra.crossSell && entry.extra.crossSell.length) sections.push({label:'Eligible actions', html:`<div class="rx-block say">${entry.extra.crossSell.map(esc).join('<br>')}</div>`});
+  if(entry.extra && entry.extra.caseRef) sections.push({label:'Case record', html:`<dl class="rx-kv">
+    <dt>Reference</dt><dd>${esc(entry.extra.caseRef)}</dd>
+    <dt>Category</dt><dd>${esc(entry.extra.category||'—')}</dd>
+    <dt>Priority</dt><dd>${esc(entry.extra.priority||'—')}</dd>
+    <dt>Next step</dt><dd>${esc(entry.extra.commitments_by_bank||'—')}${entry.extra.next_follow_up_date?` (by ${esc(entry.extra.next_follow_up_date)})`:''}</dd></dl>`});
+  sections.push({label:'AI runtime trace', html: rxiRuntimeRows(entry.runtime)});
+  if((entry.sources||[]).length) sections.push({label:'Source refs', html:`<div>${entry.sources.map(s=>RX.badge(s,'','&#8226;')).join(' ')}</div>`});
+  if(entry.consent && entry.consent.utterance) sections.push({label:'Consent evidence', html:`<div class="rx-block basis">${esc(entry.consent.utterance)}</div>`});
+  sections.push({label:'Event', html:`<dl class="rx-kv">
+    <dt>Event id</dt><dd>${esc(entry.eventId)}</dd>
+    <dt>Session</dt><dd>${esc(entry.sessionId||'—')}</dd>
+    <dt>Captured</dt><dd>${esc(entry.timestamp||'—')}</dd></dl>`});
+
+  const cid = entry.customerId || CURRENT;
+  const actions = [
+    { label:'Leaf evidence', icon:'&#9636;', onClick:()=>drillInsightEvidence(entry) },
+    { label:'Policy basis', icon:'&#9997;', onClick:()=>drillInsightPolicy(entry) },
+    { label:'Copy talk-track', icon:'&#9112;', onClick:()=>RX.copy(entry.say || entry.body || '', null) },
+    { label:'Open Customer 360', kind:'primary', icon:'&#9673;', onClick:(drw)=>{ drw.close(); if(cid) selectCustomer(cid); } },
+  ];
+  if(opts.back) actions.unshift({ label:'Back', icon:'&#8592;', onClick:()=>openInsight(entry) });
+
+  RX.drawer.open({
+    title: entry.headline || kindLabel,
+    subtitle: `${entry.customerName || cid || ''}${entry.turnId ? ` · turn ${entry.turnId}` : ''}`,
+    badges, sections, actions,
+  });
+}
+
+// Drill to the leaf rows the insight was computed from — reuses the Tool API
+// raw-facts endpoint that Core CRM already calls, no new backend surface.
+async function drillInsightEvidence(entry){
+  const cid = entry.customerId || CURRENT;
+  RX.drawer.open({ title:'Leaf evidence', subtitle:cid||'', sections:[{label:'Reading the record', html:RX.skeleton(3)}] });
+  try{
+    const ev = await api(`/v1/customers/${cid}/raw-facts`);
+    const st = ev.stress || {}, f = ev.facility || {};
+    const line = (k,v)=>`<div class="rf-line"><span>${esc(k)}</span><b>${esc(v==null||v===''?'—':v)}</b></div>`;
+    const threads = (st.open_threads||[]).map(t=>`<div class="rf-line"><span>${esc(t.topic)}</span><b>${esc(t.status||'open')}</b></div>`).join('') || '<div class="rf-line"><span>None on file</span><b>—</b></div>';
+    const sections = [
+      {label:'Facility & utilisation', html:`<div class="rf-block">${line('Facility', f.type||f.facility_type)}${line('Sanction limit', f.sanction_limit_inr!=null?fmtINR(f.sanction_limit_inr):'')}${line('Avg utilisation', f.avg_utilization_pct!=null?f.avg_utilization_pct+'%':'')}${line('Peak utilisation', f.peak_utilization_pct!=null?f.peak_utilization_pct+'%':'')}</div>`},
+      {label:'Conduct & stress signals', html:`<div class="rf-block">${line('EMI bounces', st.emi_bounces)}${line('Cheque returns', st.cheque_returns)}${line('Classification', st.classification||st.sma_status)}${line('Bureau score', ev.bureau_score||ev.cibil)}</div>`},
+      {label:'Open threads', html:`<div class="rf-block">${threads}</div>`},
+      {label:'Why this matters here', html:`<div class="rx-block why">${esc(entry.body||entry.headline||'')}</div>`},
+    ];
+    RX.drawer.open({
+      title:'Leaf evidence', subtitle:`${entry.customerName||cid} · raw facts on file`,
+      badges:[RX.badge('system of record','', '&#9636;'), entry.runtime && entry.runtime.rows_scanned!=null ? RX.badge(`${Number(entry.runtime.rows_scanned).toLocaleString('en-IN')} rows scanned`,'accent') : ''].filter(Boolean),
+      sections,
+      actions:[{label:'Back to insight', icon:'&#8592;', kind:'primary', onClick:()=>openInsight(entry)}],
+    });
+  }catch(e){
+    RX.drawer.open({ title:'Leaf evidence', subtitle:cid||'',
+      sections:[{label:'Unavailable', html:`<div class="rx-error"><div class="ic">&#9888;</div>${esc(e.message)}</div>`}],
+      actions:[{label:'Back to insight', icon:'&#8592;', kind:'primary', onClick:()=>openInsight(entry)}] });
+  }
+}
+
+// Drill to the SOP clauses behind the insight — reuses the existing RAG endpoint.
+async function drillInsightPolicy(entry){
+  const q = entry.basis || entry.body || entry.headline || '';
+  RX.drawer.open({ title:'Policy basis', subtitle:'Retrieving SOP clauses…', sections:[{label:'Searching indexed SOPs', html:RX.skeleton(2)}] });
+  try{
+    const r = await api('/v1/rag/retrieve', { method:'POST', body: JSON.stringify({ query:q, top_k:3 }) });
+    const rows = (r.results||[]);
+    const html = rows.length
+      ? rows.map(x=>`<div class="rx-block basis" style="margin-bottom:8px"><b>${esc(x.sop_id)} · ${esc(x.sop_title||'')}</b><br>${esc(x.section_title||'')}<br><span style="font-weight:400">${esc(String(x.content||'').replace(/^#+.*$/m,'').slice(0,320))}…</span></div>`).join('')
+      : '<div class="rx-empty"><div class="ic">&#9675;</div>No matching Contoso policy found in the indexed SOPs.</div>';
+    RX.drawer.open({
+      title:'Policy basis', subtitle:`${rows.length} clause(s) · grounded retrieval`,
+      badges:[RX.badge(r.grounded?'grounded':'ungrounded', r.grounded?'pos':'warn','&#9997;')],
+      sections:[{label:'Query', html:`<div class="rx-block why">${esc(q)}</div>`},{label:'Matched SOP clauses', html}],
+      actions:[{label:'Back to insight', icon:'&#8592;', kind:'primary', onClick:()=>openInsight(entry)}],
+    });
+  }catch(e){
+    RX.drawer.open({ title:'Policy basis', subtitle:'',
+      sections:[{label:'Unavailable', html:`<div class="rx-error"><div class="ic">&#9888;</div>${esc(e.message)}</div>`}],
+      actions:[{label:'Back to insight', icon:'&#8592;', kind:'primary', onClick:()=>openInsight(entry)}] });
+  }
+}
+
+// Hook for Phase 4 (sound + Notification cue). Defined defensively so the
+// deep-link path works even if the polish layer is not loaded.
+function onLiveInsight(entry){ if(typeof window.rxNotifyInsight === 'function') window.rxNotifyInsight(entry); }
+
+async function focusInsight(eventId, kind){
+  if(!eventId) return;
+  try{
+    const entry = await RXI.resolve(eventId);
+    if(entry) return openInsight(entry);
+    RX.drawer.open({ title:'Insight unavailable', subtitle:eventId,
+      sections:[{label:'Not in the live buffer', html:`<div class="rx-empty"><div class="ic">&#9675;</div>The video-call app is not reachable from this cockpit, so this ${esc(RXI_KIND_LABEL[kind]||'insight')} could not be loaded.</div>`}] });
+  }catch(e){
+    RX.drawer.open({ title:'Insight unavailable', subtitle:eventId,
+      sections:[{label:'Lookup failed', html:`<div class="rx-error"><div class="ic">&#9888;</div>${esc(e.message)}</div>`}] });
+  }
+}
+
+// Parse the Teams deep link. Returns nulls for a normal cockpit visit.
+function insightRoute(){
+  try{
+    const q = new URLSearchParams(window.location.search);
+    return { customer:q.get('customer')||q.get('customer_id'), focus:q.get('focus'), kind:q.get('kind') };
+  }catch(e){ return { customer:null, focus:null, kind:null }; }
+}
+
 async function boot() {
   try {
     await fetch(TOOLAPI_URL + "/healthz").then(r => r.json());
@@ -142,6 +343,14 @@ async function boot() {
     $("statusDot").classList.add("off"); $("statusText").textContent = "tool API unreachable";
   }
   await loadQueue();
+  const route = insightRoute();
+  // Warm the insight cache for this customer (or all customers) before the RM clicks.
+  RXI.connect(route.customer || null);
+  if(route.customer){
+    await selectCustomer(route.customer);
+    if(route.focus) await focusInsight(route.focus, route.kind);
+    return;
+  }
   await loadBriefing();
 }
 

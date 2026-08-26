@@ -71,27 +71,43 @@ function resetRemoteTile(label) {
 }
 
 // --- local mic level -> ring ------------------------------------------------
-let micAudioCtx = null, micAnalyser = null, micStream = null, micRaf = 0;
+// `micGen` is a cancellation token. The call can end (bad link, RM never joins,
+// instant hang-up) while getUserMedia is still pending, in which case
+// stopLocalSpeakingMeter() has already run against not-yet-assigned state. Each
+// await is therefore followed by an abandonment check that releases whatever was
+// just acquired — otherwise the browser's "microphone in use" indicator would
+// stay lit on a customer-facing banking page after the call ended.
+let micAudioCtx = null, micAnalyser = null, micStream = null, micRaf = 0, micGen = 0;
 async function startLocalSpeakingMeter() {
   if (micAnalyser) return;
+  const gen = ++micGen;
+  const abandoned = () => gen !== micGen;
+  const dropStream = (s) => { try { s?.getTracks().forEach((t) => t.stop()); } catch (_) {} };
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC || !navigator.mediaDevices?.getUserMedia) return;
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    micAudioCtx = new AC();
-    if (micAudioCtx.state === 'suspended') await micAudioCtx.resume().catch(() => {});
-    const src = micAudioCtx.createMediaStreamSource(micStream);
-    micAnalyser = micAudioCtx.createAnalyser();
-    micAnalyser.fftSize = 512;
-    micAnalyser.smoothingTimeConstant = 0.75;
-    src.connect(micAnalyser);
-    const buf = new Uint8Array(micAnalyser.fftSize);
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (abandoned()) { dropStream(stream); return; }
+    const ctx = new AC();
+    if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+    if (abandoned()) { try { ctx.close(); } catch (_) {} dropStream(stream); return; }
+    micStream = stream;
+    micAudioCtx = ctx;
+    const src = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.75;
+    src.connect(analyser);
+    micAnalyser = analyser;
+    const buf = new Uint8Array(analyser.fftSize);
     const frame = $('localVideo');
     let speaking = false, quietFrames = 0;
     const tick = () => {
+      // Bail BEFORE re-arming, so the loop self-terminates the moment the meter
+      // is stopped rather than rescheduling itself forever.
+      if (abandoned() || !micAnalyser || !frame) { micRaf = 0; return; }
       micRaf = requestAnimationFrame(tick);
-      if (!micAnalyser || !frame) return;
-      micAnalyser.getByteTimeDomainData(buf);
+      analyser.getByteTimeDomainData(buf);
       // RMS of the time-domain waveform, normalised around the 128 midpoint.
       let sum = 0;
       for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
@@ -107,6 +123,7 @@ async function startLocalSpeakingMeter() {
   } catch (e) { log('Speaking indicator unavailable: ' + (e?.message || e)); }
 }
 function stopLocalSpeakingMeter() {
+  micGen++;                       // cancels any start still awaiting getUserMedia
   if (micRaf) { cancelAnimationFrame(micRaf); micRaf = 0; }
   micAnalyser = null;
   try { micStream?.getTracks().forEach((t) => t.stop()); } catch (_) {}

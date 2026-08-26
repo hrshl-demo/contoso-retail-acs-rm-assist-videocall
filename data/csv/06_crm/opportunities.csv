@@ -3,3 +3,15 @@ OPP-B-001,CTB-RTL-002,Credit Limit Increase,Not eligible,,Blocked,Declining inco
 OPP-B-002,CTB-RTL-002,Card EMI Conversion / Balance Transfer,Qualified,,Open,Cuts 42% APR; service recovery
 OPP-B-003,CTB-RTL-002,Personal Loan Restructuring,Qualified,,Open,SMA-1; restructuring over new credit
 OPP-B-004,CTB-RTL-002,New Top-up Loan,Hold,,Blocked,Resolve dispute + collections first
+OPP-C1-001,CTB-RTL-003,Term Protection Cover,Qualified,,Open,Single-income household with no term cover
+OPP-C1-002,CTB-RTL-003,Deposit Ladder,Qualified,,Open,Surplus balance idle in savings
+OPP-C1-003,CTB-RTL-003,Credit Limit Increase,Qualified,,Open,"Low utilisation, clean conduct, income growing"
+OPP-C1-004,CTB-RTL-003,Personal Loan Top-up,Not eligible,,Blocked,No borrowing need evidenced
+OPP-C2-001,CTB-RTL-004,Interest Rate Review,Qualified,,Open,12 consecutive on-time EMIs after the cured arrear
+OPP-C2-002,CTB-RTL-004,Card EMI Conversion / Balance Transfer,Qualified,,Open,Cuts 42% APR on the residual balance
+OPP-C2-003,CTB-RTL-004,Credit Limit Restoration,Hold,,Blocked,Needs a fresh assessment; arrear cured only recently
+OPP-C2-004,CTB-RTL-004,New Top-up Loan,Not eligible,,Blocked,Too soon after the arrear; consolidate first
+OPP-C3-001,CTB-RTL-005,Term Protection Cover,Qualified,,Open,Single-income household with no term cover
+OPP-C3-002,CTB-RTL-005,Deposit Ladder,Qualified,,Open,Surplus balance idle in savings
+OPP-C3-003,CTB-RTL-005,Credit Limit Increase,Qualified,,Open,"Low utilisation, clean conduct, income growing"
+OPP-C3-004,CTB-RTL-005,Personal Loan Top-up,Not eligible,,Blocked,No borrowing need evidenced

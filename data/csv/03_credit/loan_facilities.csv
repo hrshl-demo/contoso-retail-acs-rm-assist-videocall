@@ -1,3 +1,9 @@
 facility_id,customer_id,facility_type,sanction_date,sanction_limit_inr,current_outstanding_inr,drawing_power_inr,security_type,interest_rate_pct,review_due_date,repayment_frequency,dp_calculation_basis,risk_weight_band,facility_status
 FAC-B-CC-001,CTB-RTL-002,CC,2022-11-08,300000,306247,300000,Unsecured (credit card),42.0,2026-06-30,Monthly statement,Card limit,POC,Active
 FAC-B-PL-001,CTB-RTL-002,Personal Loan,2022-11-08,600000,410000,410000,Unsecured personal loan,16.5,,Monthly EMI,Amortising,POC,2 EMIs bounced - SMA-1
+FAC-C1-CC-001,CTB-RTL-003,CC,2019-02-14,300000,52500,300000,Unsecured (credit card),42.0,2026-06-30,Monthly statement,Card limit,POC,Active
+FAC-C1-PL-001,CTB-RTL-003,Personal Loan,2019-02-14,600000,410000,410000,Unsecured personal loan,16.5,,Monthly EMI,Amortising,POC,Active
+FAC-C2-CC-001,CTB-RTL-004,CC,2020-08-03,300000,132000,300000,Unsecured (credit card),42.0,2026-06-30,Monthly statement,Card limit,POC,Active
+FAC-C2-PL-001,CTB-RTL-004,Personal Loan,2020-08-03,600000,410000,410000,Unsecured personal loan,16.5,,Monthly EMI,Amortising,POC,1 historic EMI bounce - cured
+FAC-C3-CC-001,CTB-RTL-005,CC,2015-06-22,300000,52500,300000,Unsecured (credit card),42.0,2026-06-30,Monthly statement,Card limit,POC,Active
+FAC-C3-PL-001,CTB-RTL-005,Personal Loan,2015-06-22,600000,410000,410000,Unsecured personal loan,16.5,,Monthly EMI,Amortising,POC,Active

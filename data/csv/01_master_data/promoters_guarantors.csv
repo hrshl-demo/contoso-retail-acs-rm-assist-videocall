@@ -1,3 +1,9 @@
 person_id,customer_id,role,name,age,shareholding_pct,bureau_score_band,net_worth_band_inr,kyc_status,pep_flag,mobile_masked,email_masked
 PERS-003,CTB-RTL-002,Primary holder,Rakesh Sharma,41,100.0,620-660,8-15 lakh,Due,N,XXXXXX1003,rakesh@example.test
 PERS-004,CTB-RTL-002,Nominee,Sunita Sharma,38,0.0,n/a,n/a,Valid,N,XXXXXX1004,sunita@example.test
+PERS-C1-01,CTB-RTL-003,Primary holder,Meera Iyer,36,100.0,749-789,8-15 lakh,Valid,N,XXXXXX1005,meera@example.test
+PERS-C1-02,CTB-RTL-003,Nominee,Arjun Iyer,39,0.0,n/a,n/a,Valid,N,XXXXXX1006,arjun@example.test
+PERS-C2-01,CTB-RTL-004,Primary holder,Imran Qureshi,44,100.0,672-712,8-15 lakh,Valid,N,XXXXXX1007,imran@example.test
+PERS-C2-02,CTB-RTL-004,Nominee,Farida Qureshi,41,0.0,n/a,n/a,Valid,N,XXXXXX1008,farida@example.test
+PERS-C3-01,CTB-RTL-005,Primary holder,Anita Deshmukh,52,100.0,749-789,8-15 lakh,Valid,N,XXXXXX1009,anita@example.test
+PERS-C3-02,CTB-RTL-005,Nominee,Sanjay Deshmukh,55,0.0,n/a,n/a,Valid,N,XXXXXX1010,sanjay@example.test

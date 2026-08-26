@@ -1256,6 +1256,48 @@ def read_pack(csv_dir: str) -> dict:
     return tables
 
 
+def _read_header(path: str) -> list[str] | None:
+    if not os.path.exists(path):
+        return None
+    with open(path, newline="", encoding="utf-8") as f:
+        try:
+            return next(csv.reader(f))
+        except StopIteration:
+            return None
+
+
+def append_csv(path: str, rows: list[dict]) -> int:
+    """Append rows to an existing CSV WITHOUT rewriting a single existing byte.
+
+    The file is opened in append mode and the existing header is reused as the
+    field order, so committed rows keep their exact bytes, quoting and ordering.
+    `extrasaction='raise'` turns a schema drift into a loud failure instead of a
+    silently dropped column.
+    """
+    if not rows:
+        return 0
+    header = _read_header(path)
+    if header is None:
+        raise SystemExit(f"Cannot append: {path} is missing or has no header.")
+    # A missing trailing newline would glue the first appended row onto the last
+    # existing one, so top it up first (all pack files are LF per .gitattributes).
+    with open(path, "rb") as f:
+        if f.seek(0, os.SEEK_END) and f.tell() > 0:
+            f.seek(-1, os.SEEK_END)
+            needs_nl = f.read(1) != b"\n"
+        else:
+            needs_nl = False
+    if needs_nl:
+        with open(path, "a", newline="", encoding="utf-8") as f:
+            f.write("\n")
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=header, lineterminator="\n",
+                           restval="", extrasaction="raise")
+        for r in rows:
+            w.writerow(r)
+    return len(rows)
+
+
 def run_validator(csv_dir: str) -> tuple[str, list[str], list[str]]:
     """Run validate_seed.py in-process against `csv_dir` so the manifest records
     a real result rather than an assumed one."""
@@ -1312,6 +1354,106 @@ def write_manifest(kb_dir: str, csv_dir: str, seed: str, customers: int, counts:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+# Tables that are scoped to the RM rather than to a customer. Appending a
+# customer must never duplicate these.
+NON_CUSTOMER_TABLES = {"rm_activity"}
+
+# Every id column the pack uses, so an append can prove up front that a new
+# customer cannot collide with one already on disk.
+ID_COLUMNS = {
+    "customer_master": ["customer_id"], "promoters": ["person_id"],
+    "stakeholders": ["stakeholder_id"], "accounts": ["account_id"],
+    "counterparties": ["counterparty_id"], "transactions": ["txn_id"],
+    "loan_facilities": ["facility_id"], "repayments": ["repayment_id"],
+    "cheque_returns": ["return_id"], "documents": ["document_id"],
+    "service_requests": ["ticket_id"], "audit_log": ["audit_id"],
+    "crm_tasks": ["task_id"], "engagement_threads": ["thread_id"],
+    "opportunities": ["opportunity_id"], "interactions": ["interaction_id"],
+}
+
+
+def assert_no_id_collisions(existing: dict, incoming: dict) -> None:
+    clashes = []
+    for key, cols in ID_COLUMNS.items():
+        have = {r.get(c) for r in existing.get(key, []) for c in cols if r.get(c)}
+        for r in incoming.get(key, []):
+            for c in cols:
+                if r.get(c) and r[c] in have:
+                    clashes.append(f"{key}.{c}={r[c]}")
+    if clashes:
+        raise SystemExit("Refusing to append — id collision with the existing pack:\n  "
+                         + "\n  ".join(sorted(set(clashes))[:20]))
+
+
+def append_customers(args) -> int:
+    """APPEND-ONLY mode.
+
+    Treats every customer already in the pack as an immutable fixture: their
+    rows are never re-derived, re-serialised or reordered. Only customers that
+    are absent are generated, and their rows are appended to the end of each
+    per-customer CSV.
+
+    This is what lets the demo carry a multi-customer portfolio while Rakesh
+    (CTB-RTL-002) stays byte-identical to what is committed.
+    """
+    existing = read_pack(args.out)
+    if not existing.get("customer_master"):
+        raise SystemExit(f"No pack found at {args.out} — run a full generation first.")
+    existing_ids = {r["customer_id"] for r in existing["customer_master"]}
+
+    n = max(1, min(args.customers, 1 + len(EXTRA_CUSTOMERS)))
+    specs = [RAKESH] + EXTRA_CUSTOMERS[: n - 1]
+
+    incoming: dict[str, list[dict]] = {}
+    added = []
+    for i, spec in enumerate(specs):
+        if spec["customer_id"] in existing_ids:
+            continue                              # never re-derive an existing customer
+        # `i` is the customer's canonical index, so the generated ids and random
+        # streams are identical to what a full --customers N run would produce.
+        for k, rows in generate_customer(spec, args.seed, i).items():
+            incoming.setdefault(k, []).extend(rows)
+        added.append(spec["customer_id"])
+
+    if not added:
+        print(f"[=] Nothing to append — {sorted(existing_ids)} already present.")
+        return 0
+
+    assert_no_id_collisions(existing, incoming)
+
+    print(f"[+] Appending {len(added)} customer(s): {', '.join(added)}")
+    for key, rel in FILE_MAP:
+        if key in NON_CUSTOMER_TABLES:
+            continue
+        rows = incoming.get(key) or []
+        if not rows:
+            continue
+        wrote = append_csv(os.path.join(args.out, rel), rows)
+        print(f"      +{wrote:<5} {rel}")
+
+    # Enriched narratives for the new customers only; the existing rows are
+    # left exactly as they are.
+    new_cases = build_enriched_cases(incoming, args.seed)
+    kb_path = os.path.join(args.kb, "crm_cases_enriched.csv")
+    wrote = append_csv(kb_path, new_cases)
+    print(f"      +{wrote:<5} {os.path.relpath(kb_path, REPO_ROOT).replace(os.sep, '/')}")
+
+    # Manifest reflects the WHOLE pack after the append, validated in-process.
+    merged = read_pack(args.out)
+    counts = {rel: len(merged.get(key, [])) for key, rel in FILE_MAP}
+    with open(kb_path, newline="", encoding="utf-8") as f:
+        all_cases = list(csv.DictReader(f))
+    m = write_manifest(args.kb, args.out, args.seed,
+                       len(merged["customer_master"]), counts, all_cases, len(all_cases))
+    print(f"[+] Pack now holds {len(merged['customer_master'])} customer(s), "
+          f"{len(all_cases)} enriched case(s)")
+    print(f"[+] Validation: {m['validation_status']}"
+          + (f" ({len(m['validation_errors'])} error(s))" if m["validation_errors"] else ""))
+    for e in m["validation_errors"]:
+        print(f"      [FAIL] {e}")
+    return 0 if m["validation_status"] == "passed" else 1
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Deterministic retail seed generator (offline, stdlib only).")
     ap.add_argument("--out", default=os.path.join(REPO_ROOT, "data", "csv"),
@@ -1324,7 +1466,16 @@ def main(argv=None) -> int:
     ap.add_argument("--enrich-only", action="store_true",
                     help="do not touch the CSVs; rebuild only the enriched cases + manifest "
                          "from the pack already on disk")
+    ap.add_argument("--append", action="store_true",
+                    help="APPEND-ONLY: keep every customer already in the pack byte-identical "
+                         "and only append the customers that are missing (up to --customers)")
     args = ap.parse_args(argv)
+
+    if args.append and args.enrich_only:
+        print("[!] --append and --enrich-only are mutually exclusive.", file=sys.stderr)
+        return 2
+    if args.append:
+        return append_customers(args)
 
     if args.enrich_only:
         tables = read_pack(args.out)

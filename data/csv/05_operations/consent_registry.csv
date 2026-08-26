@@ -1,2 +1,5 @@
 customer_id,consent_type,status,captured_date,expiry_date,channel,consent_id,consent_status,consent_date,purpose,source_system
 CTB-RTL-002,Call recording + analytics,Active,2025-06-30,2027-06-30,Branch,,,,,
+CTB-RTL-003,Call recording + analytics,Active,2025-06-30,2027-06-30,Branch,,,,,
+CTB-RTL-004,Call recording + analytics,Active,2025-06-30,2027-06-30,Branch,,,,,
+CTB-RTL-005,Call recording + analytics,Active,2025-06-30,2027-06-30,Branch,,,,,

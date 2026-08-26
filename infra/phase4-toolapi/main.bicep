@@ -177,7 +177,28 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           ]
         }
       ]
-      scale: { minReplicas: 1, maxReplicas: 3 }
+      // SCALE: pinned to a SINGLE replica on purpose.
+      //
+      // The Tool API keeps its runtime state in the FastAPI process — the store
+      // is a per-process singleton (deps.py get_store -> app.state.store) and
+      // backend/app/store.py holds `pending_writes`, `events` and
+      // `call_records` as plain in-process lists with no shared backing store.
+      //
+      // The consent-gated CRM write is a TWO-CALL sequence: the caller POSTs
+      // /v1/crm/update-candidate and then POSTs /v1/crm/approve-update with the
+      // returned candidate_id (videoassist/server.js:565-566, and the cockpit's
+      // own proposeTask()). With maxReplicas > 1 those two requests can land on
+      // different replicas, and the approve then fails at
+      // routes/analysis.py:371 with 404 "Candidate not found or already
+      // processed" — so the case the customer just consented to is never
+      // written. The same split-brain silently empties the post-call
+      // transcripts panel (POST /call-records on one replica, GET on another)
+      // and shows only a fraction of the glass-box audit trail.
+      //
+      // Scaling out would require moving that state to an external store, which
+      // is out of scope for this demo; one replica also comfortably covers its
+      // load.
+      scale: { minReplicas: 1, maxReplicas: 1 }
     }
   }
 }

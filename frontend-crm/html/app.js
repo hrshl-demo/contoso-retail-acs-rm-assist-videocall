@@ -479,12 +479,18 @@ async function boot() {
   await loadBriefing();
 }
 
-let DAILY_STORY_STATE = { stage:1, unlocked:1, results:{}, focusCustomerId:null };
+// The guided demo opens on Rakesh. The priority queue ranks by bucket and
+// relationship value, so with a multi-customer pack a higher-scoring customer
+// legitimately sorts first, which would silently move the Daily Briefing's
+// focus (and its "Open top customer" action) off the journey the demo narrates.
+// The queue sidebar already pins him; this keeps the briefing consistent with it.
+const DEMO_FOCUS_CUSTOMER_ID = "CTB-RTL-002";
+let DAILY_STORY_STATE = { stage:1, unlocked:1, results:{}, focusCustomerId:DEMO_FOCUS_CUSTOMER_ID };
 let RELATIONSHIP_STORY_STATE = {};
 
 async function loadBriefing(reset=true) {
   setMenu('briefing'); setCrumb('Daily Briefing');
-  if(reset) DAILY_STORY_STATE = { stage:1, unlocked:1, results:{}, focusCustomerId:null };
+  if(reset) DAILY_STORY_STATE = { stage:1, unlocked:1, results:{}, focusCustomerId:DEMO_FOCUS_CUSTOMER_ID };
   renderDailyStoryShell();
   await loadDailyStoryStage(DAILY_STORY_STATE.stage || 1, false);
 }

@@ -8,7 +8,10 @@ ACS PSTN phone call.
 ## What it creates / reuses
 
 **Creates (tagged `project=contoso-msme-rm-assist`):**
-- `videoassist-web` Container App (Node/Express, port 3000, external HTTPS, min-replicas 1).
+- `videoassist-web` Container App (Node/Express, port 3000, external HTTPS, pinned to
+  exactly 1 replica — the app keeps the live call session, bookings, the insight
+  ring buffer and the SSE subscribers in process memory, so scaling out would break
+  session continuity and Teams deep-link resolution).
 - `acs-rm-copilot` ACS resource for video tokens — only if missing (no purchased PSTN number).
 
 **Reuses (does NOT recreate):**

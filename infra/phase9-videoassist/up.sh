@@ -157,20 +157,39 @@ if [[ -n "${GRAPH_TENANT_ID:-}" && -n "${GRAPH_CLIENT_ID:-}" && -n "${GRAPH_CLIE
 fi
 
 az extension add --name containerapp --upgrade -y 2>/dev/null || true
+# SCALE: this app is deliberately pinned to a SINGLE replica.
+#
+# Video Assist holds all of its call state in the Node process, with no shared
+# backing store and no session affinity configured:
+#   server.js        `let session`  — the singleton live call session
+#   server.js        `bookings`     — booking id -> RM meeting link
+#   insight-store.js `insights`     — the deep-link insight ring buffer
+#   insight-store.js `subscribers`  — the open SSE connections
+#   nudge-engine.js  `cache`        — the primed per-customer evidence
+#
+# With max-replicas > 1, Container Apps round-robins requests across replicas
+# and each of those breaks independently: a /transcript POST can land on a
+# replica with no active session, a Teams "Open in RM Cockpit" link can resolve
+# to a replica that never recorded that insight (a 404 with no restart
+# involved), /insights/stream only ever sees its own replica's insights, and a
+# customer's /call/:id/join can miss the booking entirely.
+#
+# One replica is also correct for the demo's load. Scaling out would require an
+# external session/insight store, which is explicitly out of scope.
 if az containerapp show -n "$VA_APP" -g "$AZ_RG" -o none 2>/dev/null; then
   log "Updating existing Container App $VA_APP (additive — preserves Teams webhook) ..."
   az containerapp identity assign -n "$VA_APP" -g "$AZ_RG" --user-assigned "$UAMI_ID" -o none
   az containerapp registry set -n "$VA_APP" -g "$AZ_RG" --server "$ACR_LOGIN_SERVER" --identity "$UAMI_ID" -o none
   az containerapp secret set -n "$VA_APP" -g "$AZ_RG" --secrets "${SECRETS[@]}" -o none
   az containerapp update -n "$VA_APP" -g "$AZ_RG" --image "$IMAGE_REF" \
-    --min-replicas 1 --max-replicas 3 --set-env-vars "${ENVVARS[@]}" -o none
+    --min-replicas 1 --max-replicas 1 --set-env-vars "${ENVVARS[@]}" -o none
 else
   log "Creating Container App $VA_APP in $NAME_ACA_ENV ..."
   az containerapp create -n "$VA_APP" -g "$AZ_RG" --environment "$NAME_ACA_ENV" \
     --image "$IMAGE_REF" \
     --user-assigned "$UAMI_ID" \
     --registry-server "$ACR_LOGIN_SERVER" --registry-identity "$UAMI_ID" \
-    --target-port 3000 --ingress external --min-replicas 1 --max-replicas 3 \
+    --target-port 3000 --ingress external --min-replicas 1 --max-replicas 1 \
     --secrets "${SECRETS[@]}" --env-vars "${ENVVARS[@]}" \
     --tags "$PROJECT_TAG" phase=phase9 -o none
 fi

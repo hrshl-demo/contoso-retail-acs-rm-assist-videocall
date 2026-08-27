@@ -58,7 +58,7 @@ run_check "Backend Python compiles (backend/app/**.py)" check_backend_compile
 # ---- 3) JavaScript syntax (only if node is available; otherwise skip) ----
 check_js_syntax() {
   if ! command -v node >/dev/null 2>&1; then
-    printf "${C_YELLOW}[skip]${C_RESET} node not found — skipping JS syntax check (built in-container at deploy).\n"
+    printf "${C_YELLOW}[skip]${C_RESET} node not found on this host — skipping JS syntax check (the VM builds it at deploy).\n"
     return 0
   fi
   local f rc=0

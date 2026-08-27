@@ -132,15 +132,6 @@ fi
 # monitoring) ∥ phase3 (data).
 run_wave up phase2-ai phase3-data || abort "wave2(phase2/phase3)"
 
-# Ensure the parallel image pre-build has finished before phases that consume the images.
-if [[ -n "$PREBUILD_PID" ]]; then
-  log "Waiting for parallel image pre-build to finish (usually already done under phase2)..."
-  if wait "$PREBUILD_PID"; then
-    ok "Parallel image pre-build complete."
-  else
-    warn "Image pre-build reported issues; phases will build any missing images inline. See $PREBUILD_LOG"
-  fi
-fi
 
 # ---- Persistent layer + application VM (phase10) + keyless gpt-5.4 generation on the VM ----
 # The VM (billable, in $AZ_RG) IS the application host: Caddy terminates TLS and serves the

@@ -59,6 +59,44 @@ sed -e "s#__RMASSIST_HOST__#${RMASSIST_HOST}#g" \
     "$SCRIPT_DIR/cloud-init.yaml" > "$CLOUD_INIT_RENDERED"
 CLOUD_INIT_B64="$(base64 -w0 "$CLOUD_INIT_RENDERED" 2>/dev/null || base64 "$CLOUD_INIT_RENDERED" | tr -d '\n')"
 
+# ---------- Preflight: is the requested VM size actually deployable here? ----------
+# A capacity restriction must abort BEFORE any billable resource is created. Without this,
+# ARM only rejects the size at VM preflight — i.e. mid-wave, after phase2/phase4 have
+# already provisioned real resources — which is exactly how Standard_B2s burned a build in
+# southindia. `az vm list-skus` reports both availability and per-subscription restrictions.
+_preflight_vm_size() {
+  local size="$1" region="$2" found restrictions detail
+  log "Preflight: checking VM size '$size' is available in $region ..."
+  local hint="     List sizes that ARE available and unrestricted:
+       az vm list-skus --location $region --resource-type virtualMachines --query \"[?starts_with(name,'Standard_D') && length(restrictions)==\\\`0\\\`].name\" -o tsv
+     Then set VM_SIZE in infra/common/env.sh (current value: $size)."
+
+  # The availability decision is made with --query alone (no jq), so a missing jq can
+  # never make this fail OPEN and wave the build through to an ARM SkuNotAvailable.
+  found="$(az vm list-skus --location "$region" --resource-type virtualMachines \
+            --query "length([?name=='${size}'])" -o tsv 2>/dev/null || echo "")"
+  if [[ -z "$found" ]]; then
+    warn "Could not query VM SKUs in $region (az error or no permission) — skipping the size preflight."
+    return 0
+  fi
+  if [[ "$found" == "0" ]]; then
+    die "VM size '$size' is NOT offered in $region.
+$hint"
+  fi
+  restrictions="$(az vm list-skus --location "$region" --resource-type virtualMachines \
+                   --query "length([?name=='${size}'] | [0].restrictions)" -o tsv 2>/dev/null || echo "0")"
+  if [[ "${restrictions:-0}" != "0" ]]; then
+    warn "VM size '$size' is offered in $region but is RESTRICTED for this subscription:"
+    detail="$(az vm list-skus --location "$region" --resource-type virtualMachines \
+               --query "[?name=='${size}'] | [0].restrictions[].{type:type,reason:reasonCode}" -o tsv 2>/dev/null || true)"
+    [[ -n "$detail" ]] && printf '       %s\n' $detail
+    die "Refusing to deploy: '$size' would fail ARM preflight with SkuNotAvailable / capacity restriction.
+$hint"
+  fi
+  ok "Preflight OK: '$size' is available and unrestricted in $region."
+}
+_preflight_vm_size "$VM_SIZE" "$AZ_REGION"
+
 # ---------- Deploy the VM Bicep ----------
 DEPLOYMENT_NAME="phase10-vmhost-$(date -u +%Y%m%d-%H%M%S)"
 log "Deploying VM Bicep (deployment: $DEPLOYMENT_NAME) ..."

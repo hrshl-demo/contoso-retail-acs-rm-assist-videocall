@@ -229,7 +229,12 @@ export NAME_VM_NIC="${NAME_VM_NIC:-nic-rmx-host}"
 export NAME_VM_NSG="${NAME_VM_NSG:-nsg-rmx-host}"
 export NAME_VM_VNET="${NAME_VM_VNET:-vnet-rmx-host}"
 export VM_ADMIN_USER="${VM_ADMIN_USER:-azureuser}"
-export VM_SIZE="${VM_SIZE:-Standard_B2s}"
+# Standard_D4as_v5 (4 vCPU / 16 GB). NOT Standard_B2s: the B-series is capacity-restricted
+# in southindia and the VM preflight in phase10-vmhost/up.sh will abort the build if the
+# chosen size is unavailable. D4as_v5 is Gen2-only, which matches the 22_04-lts-gen2 image,
+# and the Dasv5 family has no local temp disk — nothing in cloud-init depends on /mnt.
+# Override here if you retarget the region; the preflight lists viable alternatives.
+export VM_SIZE="${VM_SIZE:-Standard_D4as_v5}"
 export VM_IMAGE="${VM_IMAGE:-Ubuntu2204}"
 # Local SSH keypair the orchestrator uses to reach the VM (created by phase10 if absent;
 # the private key is git-ignored — see .gitignore). No password auth is enabled on the VM.

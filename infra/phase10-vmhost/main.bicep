@@ -29,7 +29,7 @@ param nsgName string = 'nsg-rmx-host'
 param vnetName string = 'vnet-rmx-host'
 
 @description('VM size.')
-param vmSize string = 'Standard_B2s'
+param vmSize string = 'Standard_D4as_v5'
 
 @description('Admin username for SSH.')
 param adminUsername string = 'azureuser'

@@ -591,6 +591,51 @@ EOF
 }
 
 # -------------------------------------------------------------------------------------
+# ensure_toolapi_bearer — resolve (or, once, generate) the Tool API bearer token and export
+# it under BOTH names the codebase uses. Idempotent: the same value on every call.
+#
+# Two names exist for one secret, and they are NOT interchangeable:
+#   TOOLAPI_BEARER_TOKEN  what the FastAPI backend reads (backend/app/config.py:30)
+#   TOOLAPI_BEARER        what the Video Assist Node app reads, and what phase9 injected
+# Getting this wrong produces a 401 that looks like a routing bug, so both are set here
+# from a single source rather than being written independently in two places.
+#
+# Historically phase4-toolapi/up.sh generated and persisted this token in its own
+# outputs.env. phase4 is being retired (the Tool API now runs on the VM), so the token needs
+# a home that outlives it: the git-ignored infra/common/secrets.env, which is already the
+# established place for exactly this kind of value and survives outputs.env regeneration.
+ensure_toolapi_bearer() {
+  local root secrets phase4_out tok=""
+  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  secrets="$root/infra/common/secrets.env"
+  phase4_out="$root/infra/phase4-toolapi/outputs.env"
+
+  # 1) already in the environment (secrets.env is sourced at the top of this file)
+  tok="${TOOLAPI_BEARER_TOKEN:-${TOOLAPI_BEARER:-}}"
+  # 2) fall back to phase4's outputs while that phase still exists, so an in-place upgrade
+  #    keeps the SAME token and previously-deployed callers do not start failing auth.
+  if [[ -z "$tok" && -f "$phase4_out" ]]; then
+    tok="$(sed -n 's/^export TOOLAPI_BEARER_TOKEN="\(.*\)"$/\1/p' "$phase4_out" | head -1)"
+    [[ -n "$tok" ]] && log "Reusing the Tool API bearer token from phase4 outputs."
+  fi
+  # 3) first run anywhere: mint one and persist it so every later phase agrees.
+  if [[ -z "$tok" ]]; then
+    tok="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))' 2>/dev/null || openssl rand -base64 36 | tr -d '\n/+=')"
+    [[ -n "$tok" ]] || die "Could not generate a Tool API bearer token (need python3 or openssl)."
+    mkdir -p "$(dirname "$secrets")"
+    touch "$secrets"; chmod 600 "$secrets" 2>/dev/null || true
+    {
+      echo ""
+      echo "# Tool API bearer token (auto-generated $(date -u +%FT%TZ) by env.sh:ensure_toolapi_bearer)."
+      echo "export TOOLAPI_BEARER_TOKEN=\"$tok\""
+    } >> "$secrets"
+    ok "Generated a Tool API bearer token and persisted it to infra/common/secrets.env."
+  fi
+  export TOOLAPI_BEARER_TOKEN="$tok"
+  export TOOLAPI_BEARER="$tok"
+}
+
+# -------------------------------------------------------------------------------------
 # foundation_present — NON-FATAL predicate. Returns 0 if the non-billable foundation
 # (RG + ACR + UAMI + Container Apps env) is fully present, 1 if anything is missing.
 # Sets the global array FOUNDATION_MISSING to the human-readable names that are absent,

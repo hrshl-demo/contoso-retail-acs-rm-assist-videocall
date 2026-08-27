@@ -185,6 +185,19 @@ if [[ "${SKIP_VMHOST:-0}" != "1" ]]; then
     warn "SKIP_DATAGEN=1 — VM is up but data/SOP generation was skipped."
   fi
 
+  # Deploy the FastAPI Tool API onto the VM as a native systemd service (Phase B of the
+  # Container-Apps -> VM migration). This runs ALONGSIDE the phase4 Container App for now:
+  # the two are independent, and phase4 is only removed in Phase E once the CRM and Video
+  # Assist have also moved. Running it here means the VM path is exercised on every build
+  # rather than being dead code until the cutover.
+  # It is a hard failure, not a warning: its health gate is the first end-to-end proof that
+  # Caddy's /api route and strip_prefix work, and silently continuing past that would just
+  # move the discovery to a later, more confusing phase.
+  if [[ "${SKIP_TOOLAPI_VM:-0}" != "1" ]]; then
+    log "Deploying the Tool API onto the VM (systemd + Caddy /api)..."
+    bash "$SCRIPT_DIR/../tools/deploy-toolapi-on-vm.sh" || abort "deploy-toolapi-on-vm"
+  fi
+
   # Deploy the static Core Banking & CRM console + dataset to the VM's Caddy webroot so it is
   # served over the reusable TLS host. Runs whenever the VM is up (independent of SKIP_DATAGEN);
   # the dataset is either freshly generated above or the committed baseline. SKIP_CONSOLE=1 skips.

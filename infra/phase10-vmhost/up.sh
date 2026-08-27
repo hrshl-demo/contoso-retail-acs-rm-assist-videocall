@@ -246,6 +246,11 @@ ok "Caddyfile validated; units installed (services are deployed by later phases)
 # Container App. Without it the app services would authenticate as the wrong principal and
 # get 403 from Foundry.
 log "Writing the root-owned 0600 EnvironmentFile ($VM_ENV_FILE) ..."
+# Resolve the Tool API bearer BEFORE writing the file, so the shared env carries both names
+# (TOOLAPI_BEARER for Video Assist, TOOLAPI_BEARER_TOKEN for the FastAPI backend) from the
+# very first build. Generating it later, in the Tool API deploy step, would leave the first
+# build with a mismatched pair and a 401 that looks like a routing fault.
+ensure_toolapi_bearer
 ENV_FILE_LOCAL="$SCRIPT_DIR/.rmx.env.rendered"
 # umask is scoped to a subshell: setting it inline would silently tighten the permissions of
 # every later file this script writes, including the exported cert tarball and outputs.env.
@@ -257,6 +262,9 @@ ENV_FILE_LOCAL="$SCRIPT_DIR/.rmx.env.rendered"
     echo "AZURE_CLIENT_ID=${UAMI_CLIENT_ID}"
     [[ -n "${ACS_CONNECTION_STRING:-}"             ]] && echo "ACS_CONNECTION_STRING=${ACS_CONNECTION_STRING}"
     [[ -n "${TOOLAPI_BEARER:-}"                    ]] && echo "TOOLAPI_BEARER=${TOOLAPI_BEARER}"
+    # Same secret, second name: the FastAPI backend reads TOOLAPI_BEARER_TOKEN, the Node
+    # Video Assist app reads TOOLAPI_BEARER. Both come from ensure_toolapi_bearer.
+    [[ -n "${TOOLAPI_BEARER_TOKEN:-}"              ]] && echo "TOOLAPI_BEARER_TOKEN=${TOOLAPI_BEARER_TOKEN}"
     [[ -n "${TEAMS_WEBHOOK_URL:-}"                 ]] && echo "TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_URL}"
     [[ -n "${TEAMS_NUDGE_WEBHOOK_URL:-}"           ]] && echo "TEAMS_NUDGE_WEBHOOK_URL=${TEAMS_NUDGE_WEBHOOK_URL}"
     [[ -n "${SCHEDULE_WEBHOOK_URL:-}"              ]] && echo "SCHEDULE_WEBHOOK_URL=${SCHEDULE_WEBHOOK_URL}"

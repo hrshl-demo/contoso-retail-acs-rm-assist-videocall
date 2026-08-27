@@ -202,14 +202,35 @@ export SEARCH_INDEX_NAME="contoso-retail-policy-index"
 # =====================================================================================
 # 5b) PERSISTENT LAYER + DATA-GEN VM + LET'S ENCRYPT CERT  (pillars 2 & 3)
 # =====================================================================================
-# A tiny PERSISTENT resource group holds the ONE thing that must survive a full wipe: a
+# A PERSISTENT resource group holds the ONE thing that must survive a full wipe: a
 # STATIC public IP. The Let's Encrypt certificate is bound to a domain, and we derive that
 # domain from the static IP as  rmassist.<ip>.nip.io  — so keeping the IP stable across
 # rebuilds is what lets us obtain the cert ONCE (first build), commit it to git, and reuse
 # it forever. wipe.sh only ever targets $AZ_RG (the billable RG); it NEVER touches
-# $AZ_RG_PERSISTENT. The persistent RG carries its OWN tag so the wipe safety-guard would
-# refuse to delete it even if pointed at it by mistake.
-export AZ_RG_PERSISTENT="${AZ_RG_PERSISTENT:-rg-contoso-rmx-persistent}"
+# $AZ_RG_PERSISTENT.
+#
+# THIS RG IS SHARED WITH OTHER DEMOS. It is the common "edge" group that also holds
+# secamc-deploy-pip and setu-deploy-pip — each anchoring its own project's committed
+# certificate. Two consequences, both already handled, but do not undo them:
+#   * infra/persistent/down.sh deletes ONLY $NAME_PERSIST_PIP by name. It removes the RG
+#     itself only when the RG is tagged as ours AND is empty afterwards, so tearing this
+#     demo down can never destroy another project's reserved address.
+#   * ensure_rg_persistent() creates the RG only when absent and never re-tags an existing
+#     one, so it will not stamp this demo's tag onto the shared group.
+# Point AZ_RG_PERSISTENT at a dedicated RG instead if you would rather not share; nothing
+# else needs to change, and down.sh will then remove that RG once it is empty.
+#
+# ⚠️ HAZARD FROM THE OTHER DIRECTION — this repo cannot defend against it.
+# The secamc demo owns this group: contoso-secamc-ai-use-cases5/infra/common/env.sh sets
+# EDGE_RG="${AZ_RG}-edge" = contoso-secamc-ai-use-cases4-edge, and running
+#     bash ~/contoso-secamc-ai-use-cases5/wipe.sh --purge-edge
+# deletes that ENTIRE resource group — which would take THIS demo's pip-rmx-persist with it,
+# along with setu-deploy-pip. The IP is only reserved, not in use, so nothing fails
+# immediately: the next build simply gets a NEW address, the derived host changes, and the
+# committed certificate in infra/cert/ no longer matches. Recovery is to delete
+# caddy-data.tgz.enc + .cert-lock.json and let the next build mint a fresh cert.
+# A plain `bash wipe.sh` in either repo is safe; only --purge-edge is destructive here.
+export AZ_RG_PERSISTENT="${AZ_RG_PERSISTENT:-contoso-secamc-ai-use-cases4-edge}"
 # The static IP and the VM that borrows it MUST be in the same region, so the persistent
 # region tracks the billable VM region ($AZ_REGION), independent of the AOAI account region.
 export AZ_REGION_PERSISTENT="${AZ_REGION_PERSISTENT:-$AZ_REGION}"

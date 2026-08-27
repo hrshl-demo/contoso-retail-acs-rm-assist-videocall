@@ -56,7 +56,7 @@ fi
 
 echo
 echo "FOUNDATION READY (resource group + platform created)."
-echo "Next (billable):  bash build.sh              # PTU gpt-4.1-mini"
-echo "             or:  bash build.sh --type=payg  # pay-as-you-go gpt-4.1-mini"
+echo "Next (billable):  bash build.sh              # DEFAULT: pay-as-you-go gpt-4.1-mini (GlobalStandard)"
+echo "             or:  bash build.sh --type=ptu  # instead: 15-PTU gpt-4.1-mini (GlobalProvisionedManaged)"
 echo "Teardown after a demo (KEEPS this foundation + the RG): bash wipe.sh"
 echo "Log: $LOG_FILE"

@@ -6,8 +6,9 @@ single end-to-end customer journey: the *Everyday RM Assist* flow for retail cus
 
 Everything is synthetic (data, personas, transcripts). The stack is **fully self-contained and
 all-or-nothing**: it **creates its own resource group in South India and provisions everything inside
-it** — the Azure AI Foundry account + project, the **`gpt-4.1-mini` chat deployment** (a 15-PTU
-`GlobalProvisionedManaged` deployment by default, or a pay-as-you-go one with `--type=payg`), the
+it** — the Azure AI Foundry account + project, the **`gpt-4.1-mini` chat deployment** (a
+pay-as-you-go `GlobalStandard` deployment by default, or a 15-PTU `GlobalProvisionedManaged`
+one with `--type=ptu`), the dedicated **`gpt-5.4-mini` voice deployment** (`GlobalStandard`), the
 `text-embedding-3-small` embedding deployment, AI Search, ACS + Email, Speech, and all the app
 infrastructure. Deploy it in one shot with **`deploy.sh`**, or split it into a one-time non-billable
 foundation (**`build_rg.sh`**) plus a per-demo billable build (**`build.sh`**); **`wipe.sh`** tears the
@@ -33,7 +34,7 @@ The RM (Priya Nair) works a portfolio in a CRM cockpit and is coached through a 
    live **synopsis + nudges** to the RM (optionally into Microsoft Teams) as the conversation unfolds.
 7. **Scheduling** — a customer-facing self-service page to book the follow-up.
 
-The chat/synopsis/nudge intelligence is served by the **15-PTU `gpt-4.1-mini`** deployment this stack creates.
+The CRM/narration intelligence is served by the **pay-as-you-go `gpt-4.1-mini`** deployment this stack creates; the live-call synopsis/nudge path runs on a dedicated **`gpt-5.4-mini`** reasoning deployment.
 
 ---
 
@@ -44,7 +45,7 @@ flowchart TB
   subgraph Created["Everything CREATED + DESTROYED by this stack — new RG in South India (tag: contoso-retail-rm-assist-rakesh)"]
     RG["Resource group: rg-contoso-rmx-rakesh (southindia)"]
     FND["AI Foundry account + project (AIServices)"]
-    CHAT["gpt-4.1-mini chat deployment · 15 PTU (or PAYG)"]
+    CHAT["gpt-4.1-mini chat deployment · PAYG default (or 15 PTU)"]
     EMB["text-embedding-3-small (embeddings)"]
     PLAT["Platform: Log Analytics · ACR · Managed Identity · Container Apps env"]
     SRCH["AI Search + SOP index"]
@@ -89,7 +90,7 @@ Quick start (GitHub Actions):
 gh repo clone hrshl-demo/contoso-retail-acs-rm-assist-videocall
 cd contoso-retail-acs-rm-assist-videocall
 bash scripts/setup-github-oidc.sh      # once: trust GitHub → Azure (needs az + gh login)
-# then: GitHub ▸ Actions ▸ "Deploy to Azure" ▸ Run workflow ▸ ptu | payg
+# then: GitHub ▸ Actions ▸ "Deploy to Azure" ▸ Run workflow ▸ payg (default) | ptu
 ```
 
 Secrets are **never committed**: copy `infra/common/secrets.env.example` →
@@ -106,8 +107,8 @@ Secrets are **never committed**: copy `infra/common/secrets.env.example` →
 - **Bash** environment (Linux/macOS/WSL). The scripts are POSIX-bash and run non-interactively.
 - Permissions to **create a resource group** and all resources within it, including creating/deleting
   an Azure AI Foundry (Cognitive Services) account and model deployments.
-- **Quota:** a `GlobalProvisionedManaged` (PTU) chat deployment needs GlobalProvisionedManaged quota on
-  the subscription (default build); `--type=payg` uses `GlobalStandard` quota instead. `gpt-4.1-mini`
+- **Quota:** the default build uses `GlobalStandard` quota only. `--type=ptu` instead needs
+  GlobalProvisionedManaged (PTU) quota on the subscription. `gpt-4.1-mini`
   and `text-embedding-3-small` must be offered in `AZ_REGION` (default `southindia`) — change the region
   in `env.sh` if not.
 - **Region-bound services move out of South India automatically.** AI Search and the standalone Speech
@@ -132,8 +133,8 @@ locked-down subscriptions (it does the one-time, RG-level setup separately from 
 ### Option A — one-shot (`deploy.sh`)
 
 ```bash
-bash deploy.sh                 # DEFAULT: create a 15-PTU gpt-4.1-mini chat deployment
-bash deploy.sh --type=payg     # instead create a pay-as-you-go (GlobalStandard) chat deployment
+bash deploy.sh                 # DEFAULT: pay-as-you-go (GlobalStandard) gpt-4.1-mini chat deployment
+bash deploy.sh --type=ptu      # instead create a 15-PTU (GlobalProvisionedManaged) chat deployment
 ```
 
 Creates the resource group **and** everything inside it in a single run.
@@ -145,7 +146,7 @@ demo cycles (so each demo is just the fast, billable app build + teardown):
 
 ```bash
 bash build_rg.sh              # run ONCE — creates RG + platform (non-billable)
-bash build.sh                 # per demo — billable stack (PTU).  build.sh --type=payg for PAYG
+bash build.sh                 # per demo — billable stack (PAYG default). build.sh --type=ptu for PTU
 # ... run your demo ...
 bash wipe.sh                  # after a demo — deletes the billable stack, KEEPS the RG + platform
 bash build.sh                 # next demo — no need to re-run build_rg.sh
@@ -165,11 +166,11 @@ scripts and `env.sh`, so behavior is identical — only *how much* runs per invo
 
 | `--type` | Chat deployment created | SKU | Deleted by `wipe.sh`? |
 |----------|-------------------------|-----|-----------------------|
-| *(none)* / `ptu` **(default)** | `gpt-4.1-mini-ptu` | `GlobalProvisionedManaged`, **15 PTU** | ✅ yes |
-| `payg` | `gpt-4.1-mini-payg` | `GlobalStandard`, pay-as-you-go | ✅ yes |
+| *(none)* / `payg` **(default)** | `gpt-4.1-mini-payg` | `GlobalStandard`, pay-as-you-go | ✅ yes |
+| `ptu` | `gpt-4.1-mini-ptu` | `GlobalProvisionedManaged`, **15 PTU** | ✅ yes |
 
 - **Both modes CREATE the chat deployment** and **delete it on wipe**. The only difference is the SKU:
-  PTU reserves 15 provisioned units (billed hourly while it exists); PAYG bills per token used.
+  PAYG (the default) bills per token used; `--type=ptu` reserves 15 provisioned units, billed hourly while it exists.
 - `wipe.sh` deletes the deployment **regardless of the `--type` you pass to it** (or don't): the
   Phase-2 teardown enumerates and removes *every* model deployment on the Foundry account — chat
   (`-ptu` **and** `-payg`) plus the embedding — so a PAYG stack is fully torn down even by a bare
@@ -191,8 +192,8 @@ The build runs `infra/rebuild-parallel.sh`, which builds in dependency-ordered w
 On success the build prints the CRM dashboard URL, the Video Assist URL, the Step 7 launch link
 (`…/?customer_id=CTB-RTL-002`), and a health check.
 
-> **Cost note:** a `GlobalProvisionedManaged` (PTU) deployment bills **per hour while it exists**,
-> whether or not you send traffic. `--type=payg` bills per token instead. Either way, run
+> **Cost note:** the default PAYG deployment bills **per token used**. `--type=ptu` instead bills
+> **per hour while it exists**, whether or not you send traffic. Either way, run
 > `bash wipe.sh` when you're done — it deletes the billable stack, so **all** model/Search/ACS billing
 > stops (only the ~$5/mo ACR remains if you keep the foundation for the next demo).
 
@@ -288,15 +289,17 @@ Every variable is listed below with its pre-filled demo value. Override any of t
 | `PROJECT_TAG` | `project=contoso-retail-rm-assist-rakesh` | Combined |
 | `SUFFIX` | sha256-derived (5 chars) | Makes globally-unique names |
 
-### 4) Chat + embedding models — selected by `DEPLOY_TYPE` (`--type=ptu` default, or `--type=payg`)
+### 4) Chat + embedding models — selected by `DEPLOY_TYPE` (`--type=payg` default, or `--type=ptu`)
 
-`DEPLOY_TYPE` (exported by `deploy.sh`/`wipe.sh` from `--type=`; default `ptu`) picks one of two
+`DEPLOY_TYPE` (exported by `build.sh`/`deploy.sh`/`wipe.sh` from `--type=`; default `payg`) picks one of two
 profiles. In **both** profiles the chat deployment is CREATED in the new RG and DELETED with it on wipe;
-only the SKU/name/capacity differ. The embedding deployment is always created too.
+only the SKU/name/capacity differ. The embedding deployment is always created too, as is the
+dedicated **voice** deployment that serves the live-call synopsis/nudge path — so a default build
+creates **three** model deployments, all `GlobalStandard`.
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `DEPLOY_TYPE` | `ptu` | `ptu` = create a 15-PTU deployment · `payg` = create a GlobalStandard pay-as-you-go one |
+| `DEPLOY_TYPE` | `payg` | `payg` **(default)** = create a GlobalStandard pay-as-you-go deployment · `ptu` = create a 15-PTU one |
 | `AOAI_CHAT_MODEL_NAME` | `gpt-4.1-mini` | Chat model (both profiles) |
 | `AOAI_CHAT_MODEL_FORMAT` | `OpenAI` | |
 | `AOAI_CHAT_MODEL_VERSION` | *(empty)* | Empty ⇒ auto-discover latest version in the region |
@@ -315,6 +318,12 @@ only the SKU/name/capacity differ. The embedding deployment is always created to
 | `AOAI_EMBED_MODEL_VERSION` | *(empty)* | Empty ⇒ auto-discover latest |
 | `AOAI_EMBED_DEPLOYMENT_NAME` | `text-embedding-3-small` | Embedding deployment name (created) |
 | `AOAI_EMBED_SKU_NAME` | `GlobalStandard` | `text-embedding-3-small` is offered as `GlobalStandard` (not plain `Standard`) in `southindia` |
+| `VOICE_MODEL_ENABLED` | `1` | **Voice profile (3rd deployment, always `GlobalStandard`).** Edit to `0` to send the live-call path back to the chat deployment |
+| `AOAI_VOICE_MODEL_NAME` | `gpt-5.4-mini` | Reasoning model for the in-call synopsis/nudge path |
+| `AOAI_VOICE_DEPLOYMENT_NAME` | `gpt-54-mini-voice` | Deployment name. Azure names disallow `.`; **phase2 checks idempotency by NAME, so changing the model requires a new name too** |
+| `AOAI_VOICE_SKU_NAME` / `AOAI_VOICE_SKU_CAPACITY` | `GlobalStandard` / `50` | Independent of `DEPLOY_TYPE` — the voice deployment is GlobalStandard even with `--type=ptu` |
+| `VOICE_AI_REASONING_EFFORT` | `low` | Reasoning budget; keeps in-call latency inside the nudge freshness window |
+| `VOICE_AI_CHAT_DEPLOYMENT` / `VOICE_AI_FAST_DEPLOYMENT` | *(= voice deployment)* | Edit either back to `$AOAI_CHAT_DEPLOYMENT_NAME` to roll back just that path |
 | `AOAI_EMBED_SKU_CAPACITY` | `50` | ×1K TPM quota units |
 | `EXISTING_AOAI_EMBED_DEPLOYMENT` | `= AOAI_EMBED_DEPLOYMENT_NAME` | What the RAG indexer references |
 
@@ -395,7 +404,7 @@ only the SKU/name/capacity differ. The embedding deployment is always created to
 ```
 env.sh (single source of truth) ──▶ infra/common/env.sh
 build_rg.sh          foundation build (run once — RG + platform, non-billable)
-build.sh             billable build (per demo — phases 2-9)   [--type=ptu|payg]
+build.sh             billable build (per demo — phases 2-9)   [--type=payg|ptu]
 deploy.sh            one-shot deploy wrapper (build_rg + build combined)
 wipe.sh              teardown wrapper (keeps the RG by default; --delete-rg for full)
 infra/

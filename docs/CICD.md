@@ -17,7 +17,7 @@ your deploy on demand. Both are just scripts GitHub runs for you, defined in
 | File | Trigger | What it does | Cost |
 |------|---------|--------------|------|
 | `.github/workflows/ci.yml` | every push / PR | lint + validate (shell, Python, JS, data). No Azure. | free |
-| `.github/workflows/deploy.yml` | **manual** button | logs into Azure (OIDC) → `bash build.sh --type=ptu\|payg` | **billable** |
+| `.github/workflows/deploy.yml` | **manual** button | logs into Azure (OIDC) → `bash build.sh --type=payg\|ptu` | **billable** |
 | `.github/workflows/wipe.yml` | **manual** button | logs into Azure (OIDC) → `bash wipe.sh [--delete-rg]` | stops billing |
 | `scripts/setup-github-oidc.sh` | run once | wires Azure↔GitHub trust + sets repo secrets | free |
 
@@ -132,7 +132,7 @@ deploy workflow only writes the ones you provide into `infra/common/secrets.env`
 ## Step 5 — Deploy and wipe from the browser
 
 1. GitHub → **Actions** tab.
-2. **Deploy to Azure** → **Run workflow** → pick `ptu` or `payg` → **Run**.
+2. **Deploy to Azure** → **Run workflow** → pick `payg` (default) or `ptu` → **Run**.
 3. Watch the live log. On success it prints the CRM + Video Assist URLs.
 4. When you're done: **Wipe Azure** → **Run workflow** → `keep-rg` (fast, keeps the
    platform for the next demo) or `delete-rg` (delete everything).
@@ -140,7 +140,7 @@ deploy workflow only writes the ones you provide into `infra/common/secrets.env`
 You can also trigger from the terminal:
 
 ```bash
-gh workflow run "Deploy to Azure" -f deploy_type=ptu
+gh workflow run "Deploy to Azure" -f deploy_type=payg
 gh workflow run "Wipe Azure"      -f scope=delete-rg
 gh run watch                      # follow the latest run
 ```
@@ -180,5 +180,5 @@ own patching and uptime of the runner.
 | Deploy fails `Foundation is incomplete` | It shouldn't — v2.3.2 self-heals. If you set `AUTO_FOUNDATION=0`, run `build_rg.sh` first. |
 | Calendared meeting is a "DEMO" link | `GRAPH_*` + `RM_USER_ID` secrets aren't set, or consent wasn't granted — see [ENTRA_PIM_ADMIN.md](ENTRA_PIM_ADMIN.md). |
 | Nudges don't appear in Teams | `TEAMS_WEBHOOK_URL` secret not set or flow disabled — see [POWER_AUTOMATE.md](POWER_AUTOMATE.md). |
-| Quota error on the chat deployment | Use `--type=payg` (GlobalStandard) or request PTU quota; both are torn down by wipe. |
+| Quota error on the chat deployment | The default is already `payg` (GlobalStandard); if you used `--type=ptu`, drop it or request PTU quota. Both are torn down by wipe. |
 | Wipe leaves the Entra app | The runner can't delete directory objects (`WIPE_GRAPH_APP=0`). Delete it from an admin machine — command in [ENTRA_PIM_ADMIN.md](ENTRA_PIM_ADMIN.md). |

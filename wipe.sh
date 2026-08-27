@@ -27,22 +27,24 @@ cd "$ROOT_DIR"
 
 usage() {
   cat <<'USAGE'
-Usage: bash wipe.sh [--type=ptu|payg] [--delete-rg]
+Usage: bash wipe.sh [--type=payg|ptu] [--delete-rg]
   (default)     tear down the billable stack; KEEP the resource group + Phase-1 platform.
   --delete-rg   FULL teardown: delete the entire resource group (foundation included).
-  --type=ptu|payg  accepted for symmetry with build.sh; does not change what is deleted.
+  --type=payg|ptu  accepted for symmetry with build.sh; does not change what is deleted.
 USAGE
 }
 
 # ---- CLI args -------------------------------------------------------------------------
-# --type=ptu|payg is accepted for symmetry with build.sh but does NOT change the wipe.
+# --type=payg|ptu is accepted for symmetry with build.sh but does NOT change the wipe:
+# the teardown removes BOTH chat profiles plus the voice and embedding deployments, so a
+# bare `bash wipe.sh` fully tears down whatever build.sh created.
 # --delete-rg switches to the FULL all-or-nothing teardown (delete the whole RG).
-DEPLOY_TYPE="${DEPLOY_TYPE:-ptu}"
+DEPLOY_TYPE="${DEPLOY_TYPE:-payg}"
 CLI_DELETE_RG=""
 for arg in "$@"; do
   case "$arg" in
     --type=*)     DEPLOY_TYPE="${arg#*=}" ;;
-    --type)       echo "Use '--type=ptu' or '--type=payg' (with '=')." >&2; exit 2 ;;
+    --type)       echo "Use '--type=payg' or '--type=ptu' (with '=')." >&2; exit 2 ;;
     --delete-rg)  CLI_DELETE_RG="1" ;;
     -h|--help)    usage; exit 0 ;;
     *)            echo "Unknown argument: $arg" >&2; usage >&2; exit 2 ;;
@@ -50,7 +52,7 @@ for arg in "$@"; do
 done
 case "$DEPLOY_TYPE" in
   ptu|payg) ;;
-  *) echo "Invalid --type '$DEPLOY_TYPE' (expected 'ptu' or 'payg')." >&2; exit 2 ;;
+  *) echo "Invalid --type '$DEPLOY_TYPE' (expected 'payg' or 'ptu')." >&2; exit 2 ;;
 esac
 export DEPLOY_TYPE
 

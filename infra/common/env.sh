@@ -14,9 +14,10 @@
 #   including the live, AI-coached VIDEO CALL (Step 7). This is a FULLY SELF-CONTAINED,
 #   ALL-OR-NOTHING build: it CREATES its own resource group and EVERYTHING inside it —
 #   including the AI Foundry (AIServices) account + project, the gpt-4.1-mini chat
-#   deployment (PTU by default, or PAYG with `--type=payg`), and the text-embedding-3-small
-#   deployment — and DELETES all of it (the whole resource group) on wipe. NOTHING is
-#   pre-provisioned or reused; there are no pre-coded resource IDs to depend on.
+#   deployment (PAYG/GlobalStandard by default, or PTU with `--type=ptu`), and the
+#   text-embedding-3-small deployment — and DELETES all of it (the whole resource group)
+#   on wipe. NOTHING is pre-provisioned or reused; there are no pre-coded resource IDs
+#   to depend on.
 
 # Strict mode for the phase SCRIPTS that source this file (they run non-interactively),
 # but NOT for an interactive shell (so a stray unset var can't kill your session).
@@ -85,21 +86,24 @@ fi
 export SUFFIX
 
 # =====================================================================================
-# 4) CHAT MODEL — selected by DEPLOY_TYPE  (default 'ptu'; 'payg' via `deploy.sh --type=payg`)
+# 4) CHAT MODEL — selected by DEPLOY_TYPE  (default 'payg'; 'ptu' via `build.sh --type=ptu`)
 # =====================================================================================
 # Two mutually-exclusive profiles, chosen by DEPLOY_TYPE. In THIS self-contained build the
 # chat deployment is ALWAYS created on the freshly-provisioned Foundry account and ALWAYS
 # deleted with the resource group on wipe — the only difference is the SKU that gets created:
 #
-#   ptu  (DEFAULT) — CREATE a 15-PTU gpt-4.1-mini deployment (GlobalProvisionedManaged).
-#   payg           — CREATE a pay-as-you-go gpt-4.1-mini deployment (GlobalStandard).
-#                    Selected with:  bash deploy.sh --type=payg
+#   payg (DEFAULT) — CREATE a pay-as-you-go gpt-4.1-mini deployment (GlobalStandard).
+#                    Bills per token used, needs only GlobalStandard quota, and is what a
+#                    bare `bash build.sh` produces.
+#   ptu            — CREATE a 15-PTU gpt-4.1-mini deployment (GlobalProvisionedManaged).
+#                    Bills per hour while it exists and needs provisioned-throughput quota.
+#                    Selected with:  bash build.sh --type=ptu
 #
-# DEPLOY_TYPE is exported by deploy.sh / wipe.sh from the --type flag; default is 'ptu'.
-export DEPLOY_TYPE="${DEPLOY_TYPE:-ptu}"
+# DEPLOY_TYPE is exported by build.sh / deploy.sh / wipe.sh from the --type flag; default is 'payg'.
+export DEPLOY_TYPE="${DEPLOY_TYPE:-payg}"
 if [[ "$DEPLOY_TYPE" != "ptu" && "$DEPLOY_TYPE" != "payg" ]]; then
-  printf '\033[1;33m[!]\033[0m Unknown DEPLOY_TYPE="%s" — falling back to "ptu".\n' "$DEPLOY_TYPE" >&2
-  DEPLOY_TYPE="ptu"; export DEPLOY_TYPE
+  printf '\033[1;33m[!]\033[0m Unknown DEPLOY_TYPE="%s" — falling back to "payg".\n' "$DEPLOY_TYPE" >&2
+  DEPLOY_TYPE="payg"; export DEPLOY_TYPE
 fi
 
 # Common model coordinates (identical for both profiles).
@@ -149,7 +153,7 @@ export EXISTING_AOAI_CHAT_DEPLOYMENT="$AOAI_CHAT_DEPLOYMENT_NAME"
 # DEPLOYMENT NAME, not by model. If you change AOAI_VOICE_MODEL_NAME you MUST also
 # change AOAI_VOICE_DEPLOYMENT_NAME, otherwise the old model is silently reused.
 # Azure deployment names may not contain '.', hence "gpt-54-mini-voice".
-export VOICE_MODEL_ENABLED="${VOICE_MODEL_ENABLED:-1}"   # 0 => voice path falls back to the chat deployment
+export VOICE_MODEL_ENABLED="${VOICE_MODEL_ENABLED:-1}"   # EDIT HERE: set to 0 to send the live-call path back to the chat deployment
 export AOAI_VOICE_MODEL_NAME="${AOAI_VOICE_MODEL_NAME:-gpt-5.4-mini}"
 export AOAI_VOICE_MODEL_FORMAT="${AOAI_VOICE_MODEL_FORMAT:-OpenAI}"
 export AOAI_VOICE_MODEL_VERSION="${AOAI_VOICE_MODEL_VERSION:-}"   # empty => auto-discover latest available version
@@ -229,8 +233,12 @@ export ACS_DATA_LOCATION="${ACS_DATA_LOCATION:-India}"
 # In-call synopsis/nudge model. When VOICE_MODEL_ENABLED=1 this points at the dedicated
 # reasoning voice deployment created by phase2; otherwise it falls back to the
 # DEPLOY_TYPE-selected chat deployment (the original behaviour).
-# ROLLBACK LEVER: if in-call latency regresses, set VOICE_AI_FAST_DEPLOYMENT (or both)
-# back to "$AOAI_CHAT_DEPLOYMENT_NAME" — the fast classifier is the latency-critical one.
+# ROLLBACK LEVER (edit this file — no command-line flag or inline env var needed):
+#   * to move the whole live-call path back to the chat model, set
+#     VOICE_MODEL_ENABLED=0 on its line above;
+#   * to move ONLY the latency-critical fast classifier back, replace the default on the
+#     VOICE_AI_FAST_DEPLOYMENT line below with "$AOAI_CHAT_DEPLOYMENT_NAME".
+# Then simply re-run `bash build.sh`.
 if [[ "${VOICE_MODEL_ENABLED:-1}" == "1" ]]; then
   export VOICE_AI_CHAT_DEPLOYMENT="${VOICE_AI_CHAT_DEPLOYMENT:-$AOAI_VOICE_DEPLOYMENT_NAME}"
 else

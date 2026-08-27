@@ -16,10 +16,10 @@ on:
   workflow_dispatch:
     inputs:
       deploy_type:
-        description: "Chat model SKU"
+        description: "Chat model SKU (payg = GlobalStandard, the default)"
         type: choice
-        options: [ptu, payg]
-        default: ptu
+        options: [payg, ptu]
+        default: payg
 
 permissions:
   id-token: write   # required for Azure OIDC federated login

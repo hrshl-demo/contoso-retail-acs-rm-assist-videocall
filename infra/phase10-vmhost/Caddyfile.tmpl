@@ -59,10 +59,14 @@ __RMASSIST_HOST__ {
 	@sse path /video/insights/stream*
 	@video path /video/*
 	@api path /api/*
-	# A bare /video or /api does NOT match /video/* — without these the SPA fallback below
-	# would swallow them and serve the CRM cockpit, which looks like a routing bug.
+	# A bare /video or /api does NOT match /video/* or /api/*. Without these redirects such a
+	# request would fall through to the static file_server, find no file of that name in the
+	# webroot, and return a bare 404 — which reads as "the app is not deployed" rather than
+	# "you are missing a trailing slash".
 	@videoRoot path /video
 	@apiRoot path /api
+	# Webroot health endpoint, kept for parity with the nginx config this replaced.
+	@healthz path /healthz
 
 	# --- Bare-prefix redirects -------------------------------------------------------
 	# `redir` runs BEFORE the handle group in Caddy's directive order, and taking a NAMED
@@ -113,13 +117,42 @@ __RMASSIST_HOST__ {
 		}
 	}
 
+	# nginx served a JSON /healthz for the Container App's liveness/readiness probes.
+	# There is no app to probe now (these are static files), but keeping the endpoint means
+	# any existing check or bookmark still answers. It MUST be a `handle` placed before the
+	# catch-all: the catch-all `handle` is terminal and sorts ahead of a bare `respond` in
+	# Caddy's directive order, so a top-level `respond /healthz` would never be reached.
+	# NOTE this is the WEBROOT's /healthz — the Tool API's own is /api/healthz.
+	handle @healthz {
+		header Content-Type application/json
+		respond `{"ok":true,"service":"contoso-rmx-cockpit","served_by":"caddy"}` 200
+	}
+
 	# --- CRM cockpit (static files, served straight off disk — no nginx needed) -------
+	# NOTE: there is deliberately NO `try_files ... /index.html` SPA fallback here.
+	# Two separate static apps share this webroot (the RM Assist cockpit at / and the
+	# Core Banking console at /console/), and a root-level SPA fallback would make ANY
+	# unknown path under EITHER app silently return the OTHER app's index.html — a 200
+	# with the wrong application in it, which is far harder to diagnose than a 404.
+	# It is also unnecessary: neither app uses HTML5 history routing. The only history
+	# call in the codebase is corebank-console/assets/app.js:112
+	# `history.replaceState(null, "", "#" + ...)`, which is a HASH fragment and never
+	# reaches the server. The cockpit is deep-linked as `/?event=...` (videoassist/
+	# teams.js:20) — the root path plus a QUERY STRING, which file_server already serves.
+	# file_server also serves index.html for directory requests and redirects
+	# /console -> /console/ on its own, so nothing is lost.
 	handle {
 		encode zstd gzip
 		root * /opt/rmx/web
-		try_files {path} {path}/ /index.html
 		file_server
 	}
+
+	# Parity with the nginx config this replaced (frontend-crm/nginx/default.conf):
+	# the cockpit's mutable assets must never be cached, or a redeployed cockpit keeps
+	# serving stale JS from the browser cache in the middle of a demo. `header` sorts
+	# BEFORE `handle` and is non-terminal, so this applies to the responses below.
+	@nostore path / /index.html /app.js /ui.js /ui.css /refresh.css
+	header @nostore Cache-Control "no-store"
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"

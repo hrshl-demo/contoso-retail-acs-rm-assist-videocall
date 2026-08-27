@@ -45,9 +45,18 @@ vm_ssh()      { ssh -n "${SSH_OPTS[@]}" "${VM_ADMIN_USER}@${VM_HOST_IP}" "$@"; }
 # vm_pipe_in keeps stdin so we can stream a tarball into `tar -x` on the VM.
 vm_pipe_in()  { ssh "${SSH_OPTS[@]}" "${VM_ADMIN_USER}@${VM_HOST_IP}" "$@"; }
 
-WEB="/opt/rmx/web"
+WEB="/opt/rmx/web/console"
 
 log "Deploying Core Banking & CRM console to the VM ($VM_HOST_IP:$WEB) ..."
+
+# The console lives in a SUBDIRECTORY, not at the webroot. The webroot itself belongs to the
+# RM Assist cockpit (tools/deploy-crm-on-vm.sh), which cannot move: videoassist/teams.js:20
+# deep-links it as `${CRM_BASE_URL}/?<query>` and frontend-crm/html/index.html references its
+# assets absolutely (/app.js, /ui.css). This console has neither constraint — every reference
+# it makes is relative (./assets/styles.css, ./assets/app.js, ./data/contosobank_dataset.json)
+# — so serving it from /console/ needs no code change at all.
+# Caddy's file_server redirects /console -> /console/ and serves index.html for the directory,
+# so no Caddyfile route is required for it either.
 
 # Ensure the webroot exists and is writable by the admin user (cloud-init already creates it,
 # but this makes the script safe to run against an older VM image too).
@@ -71,5 +80,6 @@ vm_ssh "chmod -R a+rX $WEB" || warn "Could not relax webroot permissions (Caddy 
 vm_ssh "sudo systemctl reload caddy 2>/dev/null || sudo systemctl restart caddy 2>/dev/null || true"
 
 URL="${RMASSIST_URL:-https://${RMASSIST_HOST:-$VM_HOST_IP}/}"
-ok "Console deployed. Serving at: $URL"
+ok "Console deployed. Serving at: ${URL%/}/console/"
 log "Tabs: Enterprise Overview + Retail / Business Banking / Corporate — customer 360 with core-banking + CRM views."
+log "The RM Assist cockpit is at ${URL%/}/ (deployed by tools/deploy-crm-on-vm.sh)."

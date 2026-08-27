@@ -198,12 +198,22 @@ if [[ "${SKIP_VMHOST:-0}" != "1" ]]; then
     bash "$SCRIPT_DIR/../tools/deploy-toolapi-on-vm.sh" || abort "deploy-toolapi-on-vm"
   fi
 
+  # Deploy the RM Assist CRM cockpit as static files into the VM's Caddy webroot (Phase C).
+  # Runs alongside the phase6 Container App until Phase E retires it, same as the Tool API.
+  # SKIP_CRM_VM=1 opts out.
+  if [[ "${SKIP_CRM_VM:-0}" != "1" ]]; then
+    log "Deploying the RM Assist cockpit onto the VM (static, served by Caddy at /)..."
+    bash "$SCRIPT_DIR/../tools/deploy-crm-on-vm.sh" || abort "deploy-crm-on-vm"
+  fi
+
   # Deploy the static Core Banking & CRM console + dataset to the VM's Caddy webroot so it is
   # served over the reusable TLS host. Runs whenever the VM is up (independent of SKIP_DATAGEN);
   # the dataset is either freshly generated above or the committed baseline. SKIP_CONSOLE=1 skips.
+  # NOTE: this now lands in /opt/rmx/web/console, NOT the webroot — the webroot belongs to the
+  # cockpit deployed just above. Must therefore run AFTER it, so the cockpit cannot clobber it.
   if [[ "${SKIP_CONSOLE:-0}" != "1" ]]; then
-    log "Deploying Core Banking & CRM console to the VM (served over TLS)..."
-    bash "$SCRIPT_DIR/../tools/deploy-console-on-vm.sh" || warn "Console deploy failed — TLS host still serves the placeholder page."
+    log "Deploying Core Banking & CRM console to the VM (served over TLS at /console/)..."
+    bash "$SCRIPT_DIR/../tools/deploy-console-on-vm.sh" || warn "Console deploy failed — /console/ will 404 (the cockpit at / is unaffected)."
   fi
 else
   warn "SKIP_VMHOST=1 — skipping the data-gen/Caddy VM (phase10), the persistent layer and data generation."

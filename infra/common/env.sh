@@ -668,16 +668,25 @@ print_demo_urls() {
   # Print URLs discovered from phase outputs. Safe when some phases have not run.
   local root
   root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-  local toolapi="" dash="" search="" videoassist="" console=""
+  local toolapi="" dash="" search="" videoassist="" console="" vmhost=""
   [[ -f "$root/phase4-toolapi/outputs.env" ]] && source "$root/phase4-toolapi/outputs.env" && toolapi="${TOOLAPI_URL:-}"
   [[ -f "$root/phase6-crm/outputs.env" ]] && source "$root/phase6-crm/outputs.env" && dash="${DASH_URL:-${DASHBOARD_URL:-}}"
   [[ -f "$root/phase9-videoassist/outputs.env" ]] && source "$root/phase9-videoassist/outputs.env" && videoassist="${VIDEOASSIST_URL:-}"
   [[ -f "$root/phase5-rag/outputs.env" ]] && source "$root/phase5-rag/outputs.env" && search="${SEARCH_ENDPOINT:-${RAG_INDEX_NAME:-${search:-}}}"
-  [[ -f "$root/phase10-vmhost/outputs.env" ]] && source "$root/phase10-vmhost/outputs.env" && console="${RMASSIST_URL:-}"
+  # The VM host is the single origin everything is migrating onto. Sourced LAST so its
+  # TOOLAPI_URL/VIDEOASSIST_URL win over the Container App values above once they exist.
+  if [[ -f "$root/phase10-vmhost/outputs.env" ]]; then
+    source "$root/phase10-vmhost/outputs.env"
+    vmhost="${RMASSIST_URL:-}"
+    console="${vmhost%/}/console/"
+    toolapi="${TOOLAPI_URL:-$toolapi}"
+    videoassist="${VIDEOASSIST_URL:-$videoassist}"
+  fi
   cat <<EOF
 
 $(printf '\033[1;36m========== Contoso Retail RM Assist — Rakesh Sharma ==========\033[0m')
-  Core Banking + CRM Console: ${console:-not deployed yet}
+  RM Assist cockpit (VM):    ${vmhost:-not deployed yet}
+  Core Banking Console (VM): ${console:-not deployed yet}
   CRM Dashboard:             ${dash:-not deployed yet}
   Video Assist (Step 7):     ${videoassist:-not deployed yet}
   Step 7 launch pattern:     ${videoassist:+$videoassist/?customer_id=$DEFAULT_CUSTOMER_ID}

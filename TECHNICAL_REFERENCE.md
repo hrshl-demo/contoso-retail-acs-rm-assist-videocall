@@ -17,7 +17,7 @@ Conventions used here:
 - `code font` = an exact file path, command, environment variable, endpoint, or identifier — reproduce it verbatim.
 - Money is in Indian Rupees (₹). Lakh = ₹100,000; Crore = ₹10,000,000.
 - "RM" = Relationship Manager. "The customer" = Rakesh Sharma unless stated.
-- Resource-name suffixes like `${SUFFIX}` are a deterministic per-subscription hash, so real names look like `acrrmx3f45a`, `srch-rmx-3f45a`, etc.
+- Resource-name suffixes like `${SUFFIX}` are a deterministic per-subscription hash, so real names look like `srch-rmx-3f45a`, `acs-rmx-3f45a`, etc.
 
 ---
 
@@ -38,7 +38,7 @@ Conventions used here:
 
 | Surface | Tech | Who uses it | Role |
 |---|---|---|---|
-| **CRM cockpit** (`frontend-crm`) | static SPA on nginx | Relationship Manager | System-of-record + AI "RM Assist" 7-step journey |
+| **CRM cockpit** (`frontend-crm`) | static SPA served directly by Caddy at `/` | Relationship Manager | System-of-record + AI "RM Assist" 7-step journey |
 | **Video Assist** (`videoassist`) | Node/Express + browser SPA | Customer (mobile bank app) + RM (Teams) | Live video call, live STT, live nudges, scheduling |
 | **Tool API** (`backend`) | Python FastAPI | Both of the above (server-to-server) | The grounded "brain": customer data, analytics, RAG/SOP, CRM writes, call records |
 
@@ -76,18 +76,18 @@ flowchart TB
   end
 
   subgraph RM["👔 Relationship Manager"]
-    CRM["CRM cockpit<br/>frontend-crm (nginx SPA)"]
+    CRM["CRM cockpit<br/>frontend-crm (static, Caddy /)"]
     TEAMS["Microsoft Teams<br/>(meeting + nudge cards)"]
   end
 
-  subgraph VA["🟢 Video Assist — Container App (Node/Express)"]
+  subgraph VA["🟢 Video Assist — systemd rmx-videoassist.service (Node/Express, 127.0.0.1:3000, Caddy /video)"]
     VASRV["server.js<br/>tokens · /call · /session · /transcript"]
     NENG["nudge-engine.js<br/>fast classifier + answer tools"]
     GRAPH["graph.js<br/>Graph calendar meeting"]
     TEAMSJS["teams.js<br/>webhook card formatter"]
   end
 
-  subgraph API["🧠 Tool API — Container App (FastAPI)"]
+  subgraph API["🧠 Tool API — systemd rmx-toolapi.service (FastAPI/uvicorn, 127.0.0.1:8000, Caddy /api)"]
     ROUTES["routes/*<br/>analysis · rag · briefing · voice · acs · call_records"]
     SVC["services/*<br/>NBA · analytics · nudge_engine.py · voice_copilot.py"]
     STORE["DataStore (SQLite in-memory<br/>from committed CSV pack)"]
@@ -142,8 +142,7 @@ contoso-retail-rm-assist-rakesh/
 ├── setup-graph.sh                  # creates Entra app + Graph Calendars.ReadWrite + consent
 │
 ├── backend/                        # Tool API — the grounded brain (Python FastAPI)
-│   ├── Dockerfile
-│   ├── requirements.txt
+│   ├── requirements.txt            # installed into a venv on the VM by deploy-toolapi-on-vm.sh
 │   └── app/
 │       ├── main.py                 # FastAPI app factory + router registration
 │       ├── config.py               # pydantic Settings (all backend env vars)
@@ -152,9 +151,7 @@ contoso-retail-rm-assist-rakesh/
 │       ├── routes/                 # analysis, rag, briefing, voice(+ws), acs(+ws), call_records, rawdata, workspace
 │       └── services/               # NBA, analytics, nudge_engine.py, voice_copilot.py, call_wrapup, card_limit, …
 │
-├── frontend-crm/                   # RM cockpit (static SPA served by nginx)
-│   ├── Dockerfile                  # nginx-unprivileged :8080
-│   ├── nginx/{default.conf,10-inject-config.sh}
+├── frontend-crm/                   # RM cockpit (static SPA — Caddy serves it directly at /)
 │   └── html/{index.html,app.js,ui.js,ui.css,refresh.css}
 │
 ├── videoassist/                    # Live video call service (Node/Express + browser SPA)
@@ -163,9 +160,10 @@ contoso-retail-rm-assist-rakesh/
 │   ├── toolapi.js                  # server-side client for the Tool API (bearer held server-side)
 │   ├── teams.js                    # Teams webhook card formatter (nudge/synopsis/answer/call-request)
 │   ├── graph.js                    # Microsoft Graph app-only RM calendar/Teams meeting creation
+│   ├── insight-store.js            # bounded in-memory insight ring buffer + SSE hub
+│   ├── vite.config.js              # `base` from VA_BASE_PATH so bundled assets resolve under /video
 │   ├── client/main.js              # Vite SPA: ACS calling + Azure Speech STT + opaque join
-│   ├── public/                     # bank.html/js/css (customer portal), schedule.html/js/css
-│   └── Dockerfile
+│   └── public/                     # bank.html/js/css (customer portal), schedule.html/js/css
 │
 ├── data/                           # the deterministic data pack (CSV domains + knowledge_base + sop/)
 │   └── (01_master_data … 06_crm, knowledge_base/, sop/*.md)
@@ -196,7 +194,10 @@ The Tool API is the **grounded brain and system-of-record**. Title (in `main.py`
 
 ### 5.2 Configuration (`app/config.py`, pydantic `Settings`)
 
-Values come from environment variables (Container App injects Key Vault–referenced secrets). Key groups:
+Values come from environment variables. On the VM these are supplied by two root-owned `0600`
+systemd `EnvironmentFile`s — `/opt/rmx/etc/rmx.env` (shared) and `/opt/rmx/etc/toolapi.env`
+(per-app), written by `tools/deploy-toolapi-on-vm.sh`. There is no Key Vault and no Container App
+secret store. Key groups:
 
 | Group | Variables (alias) | Notes |
 |---|---|---|
@@ -264,7 +265,7 @@ Live-call helpers reused by the ACS/Voice channels:
 
 ## 6. Component deep-dive B — CRM cockpit (`frontend-crm`)
 
-A **static** single-page app (no build step) served by **nginx-unprivileged** on `:8080`. `nginx/10-inject-config.sh` injects runtime config (Tool API URL + bearer, Video Assist URL) at container start; `nginx/default.conf` does SPA fallback + no-cache headers.
+A **static** single-page app (no build step) served **directly by Caddy** from `/opt/rmx/web` at `/`. `tools/deploy-crm-on-vm.sh` injects runtime config (Tool API URL + bearer, Video Assist URL) into `index.html` at **deploy** time — the same three placeholder tokens the old nginx entrypoint substituted at container start — and fails the deploy if any placeholder survives. Caddy supplies the no-cache headers on the mutable assets; there is deliberately no SPA fallback, because two static apps share the webroot (`/` cockpit, `/console/` Core Banking console) and a root-level fallback would serve one app's `index.html` under the other's path.
 
 **Two modes:**
 
@@ -440,7 +441,7 @@ Drivers: `infra/rebuild-parallel.sh` (dependency-aware parallel build) and `infr
 
 | Region var | Default | What lands there |
 |---|---|---|
-| `AZ_REGION` | `southindia` | RG, Foundry, deployments, ACS, ACR, UAMI, Log Analytics, Container Apps env |
+| `AZ_REGION` | `southindia` | RG, Foundry, deployments, ACS, UAMI, Log Analytics, the application VM |
 | `AZ_REGION_SEARCH` | `centralindia` | **AI Search** — South India has no Search capacity |
 | `AZ_REGION_SPEECH` | `centralindia` | **Speech** — the `SpeechServices` kind isn't offered in South India |
 
@@ -448,7 +449,7 @@ Cross-region calls are within Azure's India backbone (no egress charge); managed
 
 ### 11.2 Resource naming (from `env.sh`)
 
-`AZ_RG=rg-contoso-rmx-rakesh`; ACR `acrrmx${SUFFIX}`; UAMI `id-rmx-app`; Container Apps env `cae-rmx`; Search `srch-rmx-${SUFFIX}`; ACS `acs-rmx-${SUFFIX}` / video `acs-rmx-video-${SUFFIX}`; Speech `spch-rmx-${SUFFIX}`; Foundry `aifndry-rmx-${SUFFIX}` / project `proj-rmx-${SUFFIX}`; Tool API app `ca-rmx-toolapi`; CRM app `ca-rmx-dashboard`; Video Assist app `videoassist-web`. Everything is tagged `project=contoso-retail-rm-assist-rakesh`.
+`AZ_RG=rg-contoso-rmx-rakesh`; UAMI `id-rmx-app`; Log Analytics `log-rmx`; Search `srch-rmx-${SUFFIX}`; ACS `acs-rmx-${SUFFIX}` / video `acs-rmx-video-${SUFFIX}`; Speech `spch-rmx-${SUFFIX}`; Foundry `aifndry-rmx-${SUFFIX}` / project `proj-rmx-${SUFFIX}`; application VM `vm-rmx-host` (+ `nic-rmx-host`, `nsg-rmx-host`, `vnet-rmx-host`). The static public IP `pip-rmx-persist` lives in the separate, never-wiped `AZ_RG_PERSISTENT`. Everything is tagged `project=contoso-retail-rm-assist-rakesh`.
 
 ### 11.3 build vs deploy vs wipe (4-script model)
 

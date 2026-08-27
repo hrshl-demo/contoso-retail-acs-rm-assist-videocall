@@ -10,25 +10,35 @@ deployment created by phase2), bearer token via `DefaultAzureCredential` with sc
 
 ## Deploy
 
-```bash
-tar -xzf videoassist-entra.tar.gz
-cd videoassist-entra
-chmod +x *.sh
+This app is **not** deployed on its own. It is installed onto the phase10 application VM as the
+native systemd unit `rmx-videoassist.service` by the repo-level build:
 
-./deploy.sh                                # build + deploy; assigns a managed identity + AI role
-./set-teams-webhook.sh "<workflow-url>"    # point nudges at the RM's Teams chat
+```bash
+bash build.sh                                  # full build; deploys all three apps onto the VM
+bash tools/deploy-videoassist-on-vm.sh         # just re-deploy this app
 ```
 
-The deploy gives the Container App a **system-assigned managed identity** and tries to grant it
-**"Cognitive Services OpenAI User"** on the AI Foundry account (created by phase2). If your account
-can't assign roles, it prints the exact command for an admin (or run `./configure-ai.sh` once you
-have rights).
+The deploy ships the sources with tar-over-ssh to `/opt/rmx/videoassist`, runs a FULL `npm ci`
+(Vite and the browser SDKs are devDependencies and are needed to build), runs `npm run build` with
+`VA_BASE_PATH=/video/`, prunes to production dependencies, then starts the unit. The process binds
+**127.0.0.1:3000 only** — Caddy is the sole public ingress and serves it at `https://<host>/video`.
+
+Runtime configuration is written to two root-owned `0600` systemd `EnvironmentFile`s
+(`/opt/rmx/etc/rmx.env` shared, `/opt/rmx/etc/videoassist.env` per-app). The Teams webhook URL is
+one of those values — set `TEAMS_WEBHOOK_URL` in `infra/common/secrets.env` and re-run the deploy.
+
+The VM carries the **shared platform UAMI**, which already holds the `Cognitive Services OpenAI User`
+role granted on the AI Foundry account by phase2. `AZURE_CLIENT_ID` is set in the shared
+EnvironmentFile so `DefaultAzureCredential` picks that identity rather than the VM's own
+system-assigned one (the VM has both).
 
 ### Verify (important order)
-- `https://<app>/healthz` → `aiReady:true` means endpoint+identity are configured.
-- `https://<app>/diag`   → **`{"ok":true,...}`** means the Entra token actually works against the
-  model. If it shows `403`, the role isn't assigned/propagated yet (wait a few min or run
-  `./configure-ai.sh`). If `404`, the deployment name is wrong — fix `AZURE_AI_CHAT_DEPLOYMENT`.
+- `https://<host>/video/healthz` → `aiReady:true` means endpoint + identity are configured.
+- `https://<host>/video/diag` → **`{"ok":true,...}`** means the Entra token actually works against
+  the model. `403` means the role isn't assigned/propagated yet (wait a few minutes, or check that
+  `AZURE_CLIENT_ID` in `/opt/rmx/etc/rmx.env` is the UAMI's client id). `404` means the deployment
+  name is wrong.
+- Service logs: `ssh azureuser@<vm-ip> sudo journalctl -u rmx-videoassist -n 60`.
 
 ## RM's Teams nudge channel (no admin rights)
 

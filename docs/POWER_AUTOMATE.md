@@ -89,7 +89,7 @@ The POST body now *may* also contain a `card` field:
   "text": "<b>💡 Nudge · RETENTION</b><br>…",   // unchanged contract
   "card": { "type": "AdaptiveCard", "version": "1.4", "body": [ … ],
             "actions": [ { "type": "Action.OpenUrl", "title": "Open in RM Cockpit", "url": "…" } ] },
-  "deepLink": "https://ca-rmx-dashboard…/?customer=…&focus=…"
+  "deepLink": "https://rmassist.<static-ip>.nip.io/?customer=…&focus=…"
 }
 ```
 

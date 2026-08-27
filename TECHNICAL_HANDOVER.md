@@ -1,10 +1,30 @@
 # Technical Handover — Contoso Retail “RM Assist (Rakesh Sharma)”
 
+> ### ⚠️ Read this first — architecture changed after `v2.1.9`
+>
+> This document was written for the **Container Apps** topology. The stack has since been migrated
+> to a **single Ubuntu VM behind Caddy**, and the sections describing infrastructure have been
+> **updated in place** to match. Concretely, what changed:
+>
+> | Then (as first written) | Now |
+> |---|---|
+> | Tool API, CRM and Video Assist as three **Container Apps** | Three workloads on **one VM**: two systemd units + static files |
+> | Images built with `az acr build` and pushed to **ACR** | **No images, no registry.** Sources deployed over SSH (`tar`-over-`ssh`), Python venv + `npm ci` on the VM |
+> | A **Container Apps Environment** per build | **Caddy** terminates TLS and path-routes: `/` cockpit · `/api` Tool API · `/video` Video Assist · `/console` Core Banking console |
+> | Secrets as **literal Container App secrets** | Root-owned `0600` systemd **`EnvironmentFile`s** on the VM |
+> | `wipe.sh` kept the RG by default | `wipe.sh` **purges the whole billable RG by default**; `--keep-rg` is the escape hatch |
+>
+> **§13 Change history is deliberately NOT rewritten.** It is a record of what each version actually
+> did at the time, so it still describes Container Apps, ACR and Key Vault where those were the
+> truth. Do not "correct" it — that would falsify the history.
+>
+> The application-level chapters (§8 data pack, §9 backend, §10 Video Assist runtime, §11 CRM,
+> §14 known issues) were **not** affected by the migration and remain accurate.
+> For the current topology in full, see `README.md` and `TECHNICAL_REFERENCE.md`.
+
 > **Build:** `contoso-retail-rm-assist-rakesh` · **version `v2.1.9`** (build_date 2026-07-10)
 > **Purpose of this document:** a complete, self-contained technical handover of the *latest* build so
-> it can be handed to another engineer — or pasted into another AI — with no prior context. Everything
-> below reflects the code as it ships in the `v2.1.9` tarball. Nothing here is aspirational; it
-> documents what the scripts actually do.
+> it can be handed to another engineer — or pasted into another AI — with no prior context.
 
 ---
 
@@ -35,15 +55,14 @@ Run model (pick one):
 
 ```bash
 # One-shot
-bash deploy.sh                 # PTU (default)
-bash deploy.sh --type=payg     # PAYG
+bash deploy.sh                 # one-shot: foundation + billable stack
 
 # 3-script split (friendlier to locked-down subscriptions)
-bash build_rg.sh               # ONCE — non-billable foundation (RG + platform)
-bash build.sh                  # per demo — billable stack (PTU)
-bash build.sh --type=payg      # per demo — billable stack (PAYG)
-bash wipe.sh                   # teardown that KEEPS the RG + platform
-bash wipe.sh --delete-rg       # FULL teardown: delete the whole RG
+bash build_persistent.sh       # ONCE, EVER — static public IP (the only standing cost)
+bash build_rg.sh               # ONCE — non-billable foundation (RG + Log Analytics + UAMI)
+bash build.sh                  # per demo — billable stack (AI services + the application VM)
+bash wipe.sh                   # DEFAULT: FULL PURGE of the billable RG (IP + cert preserved)
+bash wipe.sh --keep-rg         # keep the RG + platform for a faster next build
 ```
 
 ---
@@ -89,24 +108,28 @@ contoso-retail-rm-assist-rakesh/
 │   ├── common/
 │   │   ├── env.sh            # SINGLE SOURCE OF TRUTH for all configuration + helpers
 │   │   ├── run_wave.sh       # run N phases concurrently, one log each, heartbeat + rc collection
-│   │   ├── preflight_validate.sh   # zero-cost gate: data validate + py/node/bash syntax checks
-│   │   ├── prebuild_images.sh      # build the 3 container images concurrently (speed)
-│   │   └── setup_docker_cache.sh   # optional ACR base-image cache (Docker Hub rate-limit relief)
-│   ├── rebuild-parallel.sh   # BUILD orchestrator: waves phase0..phase9 (stage-aware)
-│   ├── wipe-parallel.sh      # WIPE orchestrator: whole-RG delete OR per-phase teardown
+│   │   └── preflight_validate.sh   # zero-cost gate: data validate + py/node/bash syntax checks
+│   ├── rebuild-parallel.sh   # BUILD orchestrator: waves phase0..phase10 (stage-aware)
+│   ├── wipe-parallel.sh      # WIPE orchestrator: whole-RG purge (default) OR per-phase teardown
 │   ├── phase0-foundation/    # create+tag RG, register providers, tool checks       (up.sh/down.sh)
-│   ├── phase1-platform/      # Log Analytics, ACR, UAMI, Container Apps env   (up.sh/down.sh/main.bicep)
-│   ├── phase2-ai/            # AI Foundry acct+project, chat+embed deployments, Search, ACS, Email,
+│   ├── phase1-platform/      # Log Analytics + UAMI                          (up.sh/down.sh/main.bicep)
+│   ├── phase2-ai/            # AI Foundry acct+project, chat/voice/embed deployments, Search, ACS, Email,
 │   │                         #   Speech, role grants   (up.sh/down.sh/main.bicep + 2 helper scripts)
 │   ├── phase3-data/          # validate the committed CSV pack (creates NO Azure resources)
-│   ├── phase4-toolapi/       # Tool API (FastAPI) Container App   (up.sh/down.sh/main.bicep)
 │   ├── phase5-rag/           # create AI Search index + chunk/embed/upload SOPs (create_index.py, index_sops.py)
-│   ├── phase6-crm/           # CRM dashboard Container App   (up.sh/down.sh/main.bicep)
-│   └── phase9-videoassist/   # Video Assist Container App + dedicated video-token ACS   (up.sh/down.sh)
+│   ├── phase10-vmhost/       # THE APPLICATION VM: Ubuntu + Caddy/TLS + all three apps
+│   │                         #   up.sh/down.sh/main.bicep/cloud-init.yaml
+│   │                         #   Caddyfile.tmpl · rmx-toolapi.service.tmpl · rmx-videoassist.service.tmpl
+│   ├── persistent/           # never-wiped RG holding the STATIC PUBLIC IP (build_persistent.sh)
+│   └── cert/                 # committed, ENCRYPTED Let's Encrypt store (see tools/cert_store.sh)
+│
+├── tools/                    # on-VM deploys + repo utilities (all tar-over-ssh, no Docker)
+│   ├── deploy-toolapi-on-vm.sh · deploy-crm-on-vm.sh · deploy-videoassist-on-vm.sh
+│   ├── deploy-console-on-vm.sh · run-generation-on-vm.sh
+│   └── cert_store.sh · commit-artifacts.sh · ensure-baseline.sh
 │
 ├── backend/                  # FastAPI "Tool API" (deterministic evidence + RAG + AI narration)
-│   ├── Dockerfile            # python:3.12; uvicorn app.main:app :8000; non-root
-│   ├── requirements.txt
+│   ├── requirements.txt      # pip-installed into a venv on the VM (no image)
 │   └── app/
 │       ├── main.py           # app factory, CORS, lifespan (loads CSV/KB into in-memory store)
 │       ├── config.py         # env-var config (Foundry endpoint, search, ACS, guard flags)
@@ -116,19 +139,20 @@ contoso-retail-rm-assist-rakesh/
 │       └── services/         # analytics, breach_radar, next_best_action, nudge_engine, llm,
 │                             #   search, card_limit, collateral, memo, rm_intelligence, ... (30+)
 │
-├── frontend-crm/             # RM cockpit dashboard (static SPA served by nginx)
-│   ├── Dockerfile
-│   ├── html/                 # index.html, app.js, ui.js, ui.css, refresh.css
-│   └── nginx/                # default.conf + 10-inject-config.sh (injects runtime config at start)
+├── frontend-crm/             # RM cockpit dashboard (static SPA — Caddy serves it directly at /)
+│   └── html/                 # index.html, app.js, ui.js, ui.css, refresh.css
+│                             #   config is injected into index.html at DEPLOY time by
+│                             #   tools/deploy-crm-on-vm.sh (same tokens the old nginx entrypoint used)
 │
 ├── videoassist/              # Video Assist (Step 7 live call + nudges) — Node/Express + Vite SPA
-│   ├── Dockerfile            # node:20-alpine; target-port 3000
 │   ├── server.js             # Express server: tokens, sessions, transcript intake, scheduling
 │   ├── nudge-engine.js       # LLM-driven intent classifier + answer builder + nudge builder
 │   ├── toolapi.js            # server-side Tool API client (Entra bearer; no keys in browser)
 │   ├── teams.js              # Power Automate webhook formatters (HTML cards)
+│   ├── insight-store.js      # bounded in-memory insight ring buffer + SSE hub (/insights/stream)
+│   ├── vite.config.js        # `base` from VA_BASE_PATH so bundled assets resolve under /video
 │   ├── client/               # SPA: index.html + main.js (ACS Calling + Azure Speech) + styles.css
-│   ├── public/               # schedule.html + schedule.js (Step 7 booking page)
+│   ├── public/               # bank.html/js + schedule.html/js (customer portal + booking page)
 │   └── data/customer-portfolio.json   # synthetic fallback portfolio (used if Tool API absent)
 │
 ├── data/
@@ -152,13 +176,13 @@ flowchart TB
     FND["AI Foundry account + project (AIServices, custom subdomain)"]
     CHAT["gpt-4.1-mini chat deployment · 15 PTU (or PAYG GlobalStandard)"]
     EMB["text-embedding-3-small (GlobalStandard) — embeddings"]
-    PLAT["Platform: Log Analytics · ACR · User-Assigned MI · Container Apps env"]
+    PLAT["Platform: Log Analytics · User-Assigned MI (UAMI)"]
     SRCH["AI Search (Basic) + SOP index (centralindia)"]
     ACS["ACS (video tokens, no PSTN) + Email Communication Services"]
     SPCH["Speech account · in-call STT (centralindia)"]
-    TOOL["Tool API (FastAPI Container App :8000)"]
-    CRM["CRM dashboard (nginx Container App)"]
-    VA["Video Assist (Node Container App :3000) — live call + nudges"]
+    TOOL["Tool API — rmx-toolapi.service (FastAPI/uvicorn 127.0.0.1:8000) → Caddy /api"]
+    CRM["RM cockpit — static files on the VM → Caddy /"]
+    VA["Video Assist — rmx-videoassist.service (Node 127.0.0.1:3000) → Caddy /video"]
   end
 
   EXT["Teams / Power Automate webhook (external — NOT Azure-IaC'able)"]
@@ -195,13 +219,12 @@ flowchart TB
 | Phase | Creates | Region | SKU / size | Cost posture |
 |------|---------|--------|-----------|--------------|
 | **phase0-foundation** | Resource group (tagged); registers RPs | `AZ_REGION` (southindia) | — | free |
-| **phase1-platform** | Log Analytics, **ACR**, **User-Assigned MI**, **Container Apps env** | southindia | ACR **Basic** | ~$5/mo standing (ACR); rest ~free idle |
-| **phase2-ai** | **AI Foundry (AIServices) account + project**, **chat deployment**, **embed deployment**, **AI Search**, **ACS**, **Email**, **Speech**, role grants | AI/ACS: southindia · Search: `AZ_REGION_SEARCH` (centralindia) · Speech: `AZ_REGION_SPEECH` (centralindia) | Chat: 15‑PTU `GlobalProvisionedManaged` **or** `GlobalStandard` cap 50 · Embed: `GlobalStandard` cap 50 · Search: **Basic** (~$75/mo) · Speech: S0 | **largest cost** (PTU billed hourly; Search fixed hourly) |
+| **phase1-platform** | Log Analytics, **User-Assigned MI** | southindia | — | ~free idle |
+| **phase2-ai** | **AI Foundry (AIServices) account + project**, **chat deployment**, **voice deployment**, **embed deployment**, **AI Search**, **ACS**, **Email**, **Speech**, role grants | AI/ACS: southindia · Search: `AZ_REGION_SEARCH` (centralindia) · Speech: `AZ_REGION_SPEECH` (centralindia) | Chat `gpt-5.4` + voice `gpt-5.4-mini` + embed: all `GlobalStandard` · Search: **Basic** (~$75/mo) · Speech: S0 | **largest cost** (Search fixed hourly; models per token) |
 | **phase3-data** | *(nothing in Azure)* validates the committed CSV pack | — | — | free |
-| **phase4-toolapi** | Tool API Container App | southindia | consumption | pay‑per‑use |
 | **phase5-rag** | AI Search index + SOP embeddings (uploaded into the phase2 Search) | centralindia (index) | — | embedding calls only |
-| **phase6-crm** | CRM dashboard Container App | southindia | consumption | pay‑per‑use |
-| **phase9-videoassist** | Video Assist Container App + **dedicated video‑token ACS** (`NAME_ACS_VIDEO`, no PSTN) | southindia / ACS Global | consumption | pay‑per‑use |
+| **phase10-vmhost** | **The application VM** (`vm-rmx-host`) + NIC/NSG/VNet, Caddy + TLS, then all three apps deployed onto it, plus the **dedicated video‑token ACS** (`NAME_ACS_VIDEO`, no PSTN) | southindia / ACS Global | `Standard_D4as_v5` (4 vCPU / 16 GB) | VM billed hourly while it exists |
+| *(persistent, separate RG)* | **Static public IP** anchoring `rmassist.<ip>.nip.io` | southindia | Standard | a few $/mo — **the only standing cost**, never wiped |
 
 **Why some services leave South India automatically:** `SpeechServices` (standalone Speech account) and
 `AI Search` are **not offered in southindia**. `env.sh` defaults `AZ_REGION_SEARCH` and
@@ -209,8 +232,9 @@ flowchart TB
 This was the fix in v2.0.1 (Speech `InvalidApiSetId` in southindia).
 
 **Foundation vs Apps split (build reliability):**
-- **FOUNDATION** = phase0 + phase1. Non‑billable except ACR Basic. Built once by `build_rg.sh`.
-- **APPS** = phase2..phase9. Billable. Built per demo by `build.sh`; removed by the default `wipe.sh`.
+- **FOUNDATION** = phase0 + phase1. No standing cost. Built once by `build_rg.sh`.
+- **APPS** = phase2, phase3, phase5, phase10. Billable. Built per demo by `build.sh`; removed by
+  `wipe.sh`, which now purges the entire billable RG by default.
 
 ---
 
@@ -248,12 +272,14 @@ that would skip deletion of any listed name).
 
 ### Wipe semantics (what actually gets deleted)
 
-- **Default `bash wipe.sh`** → `WIPE_DELETE_RG=0`, `KEEP_PLATFORM=1` → **per‑phase teardown that keeps
-  the RG and the Phase‑1 platform.** It tears down phase9/6/5, then phase4/phase3, then phase2. It does
-  **not** delete ACR/UAMI/Log Analytics/Container Apps env, so the next `build.sh` is fast.
-- **`bash wipe.sh --delete-rg`** → `WIPE_DELETE_RG=1` → **deletes the entire resource group** and then
-  **purges** the soft‑deleted Cognitive Services accounts (`NAME_AISERVICES` in `AZ_REGION`,
-  `NAME_SPEECH` in `AZ_REGION_SPEECH`) so the globally‑unique names free up immediately.
+- **Default `bash wipe.sh`** → `WIPE_DELETE_RG=1` → **FULL PURGE: deletes the entire billable
+  resource group** (the VM and all three apps, Foundry + deployments, Search, ACS, Speech, Log
+  Analytics, UAMI) and then **purges** the soft‑deleted Cognitive Services accounts
+  (`NAME_AISERVICES` in `AZ_REGION`, `NAME_SPEECH` in `AZ_REGION_SPEECH`) so the globally‑unique
+  names free up immediately. The **persistent RG (static IP)** and the committed cert in
+  `infra/cert/` are **never** touched — that pair is what keeps the hostname and certificate reusable.
+- **`bash wipe.sh --keep-rg`** → `WIPE_DELETE_RG=0`, `KEEP_PLATFORM=1` → per‑phase teardown that
+  keeps the RG and the Phase‑1 platform (Log Analytics + UAMI), so the next `build.sh` is faster.
 - **Safety guard:** the full wipe refuses to delete an RG that does **not** carry the project tag unless
   `WIPE_FORCE=1`. The per‑phase downs use `assert_project_tag` before any delete.
 - **PAYG teardown fix (v2.1.2):** `phase2-ai/down.sh` now **enumerates and deletes every** model
@@ -275,13 +301,14 @@ FOUNDATION (skipped when BUILD_STAGE=apps):
 
 APPS (skipped when BUILD_STAGE=foundation):
   assert_foundation_present            # only when BUILD_STAGE=apps
-  setup_docker_cache.sh (best-effort)
-  prebuild_images.sh  (background — builds all 3 images while phase2 provisions Search)
   Wave 2:  phase2-ai  ∥  phase3-data
-  (wait for the background image pre-build)
-  Wave 3:  phase4-toolapi
-  Wave 4:  phase5-rag  ∥  phase9-videoassist
-  Wave 5:  phase6-crm  (last — injects the Video Assist URL into Step 7)
+  Wave 3:  phase10-vmhost              # the VM + Caddy + TLS
+           tools/run-generation-on-vm.sh        (dataset + SOPs, keyless gpt-5.4)
+           tools/deploy-toolapi-on-vm.sh        (systemd, health-gated through Caddy /api)
+           tools/deploy-crm-on-vm.sh            (static cockpit at /)
+           tools/deploy-videoassist-on-vm.sh    (systemd, /video)
+           tools/deploy-console-on-vm.sh        (static console at /console/)
+  Wave 4:  phase5-rag                  # index SOPs, then smoke-test RAG via https://<host>/api
 ```
 
 A failed wave **aborts** the build (a dependency is missing for later waves). Before any Azure login or
@@ -306,19 +333,15 @@ each under `/tmp/acs_build_logs/`), **auto‑answers interactive prompts** (`pri
 prints a heartbeat every ~45s with the last log line, waits for all, and returns non‑zero if any `up`
 failed (`down` is best‑effort).
 
-### `infra/common/prebuild_images.sh` (speed, on by default)
+### On-VM deploy scripts (`tools/deploy-*-on-vm.sh`)
 
-`PREBUILD_IMAGES=1` builds the three container images (Tool API, Video Assist, CRM dashboard)
-**concurrently** right after phase1, overlapping phase2’s slow AI Search provisioning. Each app phase
-(`phase4/6/9`) sources `common/prebuilt_images.env` and reuses the ready image if present, else builds
-inline (per‑image fallback). `PHASE5_REBUILD_TOOLAPI=0` (default) skips a redundant Tool‑API rebuild in
-phase5. `WIPE_PARALLEL_DELETES=1` (default) deletes independent resources concurrently on teardown.
+These replaced the image pre-build and the ACR cache. Each ships sources with **tar-over-ssh** (only
+`tar` + `ssh` needed on both ends — no rsync, no Docker), writes a root-owned `0600` systemd
+`EnvironmentFile`, then starts the unit. The Tool API and Video Assist deploys health-check on the VM
+loopback **first** — so a failure is unambiguously the app, not Caddy — and then again through Caddy,
+which is the real end-to-end proof that the path prefix is being stripped correctly.
 
-### `infra/common/setup_docker_cache.sh`
-
-Best‑effort ACR base‑image cache (authenticated `az acr import` of nginx‑unprivileged) to dodge Docker
-Hub rate limits. **Key‑Vault‑free** since v2.1.0 — inline Docker Hub creds, no vault. Non‑fatal if it
-fails (frontends may hit the rate limit but still build).
+`WIPE_PARALLEL_DELETES=1` (default) still deletes independent resources concurrently on teardown.
 
 ### phase2 ARM robustness
 
@@ -342,7 +365,7 @@ reference of the variables it declares (all overridable from the environment; de
 | `AZ_SUBSCRIPTION_ID` | `ce9b822d-f1a4-45f4-ac2c-f2255ba5dbd8` | target subscription |
 | `AZ_TENANT_ID` | `5cc1cdba-5904-4909-bf6a-2289c50333fb` | tenant |
 | `AZ_RG` | `rg-contoso-rmx-rakesh` | resource group (**created and deleted** by this build) |
-| `AZ_REGION` | `southindia` | primary region (RG + AI + ACS + container apps) |
+| `AZ_REGION` | `southindia` | primary region (RG + AI + ACS + the application VM) |
 | `AZ_REGION_SEARCH` | `centralindia` | AI Search region (not offered in southindia) |
 | `AZ_REGION_SPEECH` | `centralindia` | Speech region (SpeechServices not offered in southindia) |
 | `PROJECT_TAG_KEY` / `PROJECT_TAG_VALUE` | `project` / `contoso-retail-rm-assist-rakesh` | tag on every resource; teardown safety guard |
@@ -362,11 +385,14 @@ Driven by `DEPLOY_TYPE` (`ptu` default / `payg`). Resolves `AOAI_CHAT_DEPLOYMENT
 plain `Standard` is unavailable in southindia, v2.1.1 fix), `AOAI_EMBED_SKU_CAPACITY` (50).
 
 ### §5 Net-new resource names (all suffix `3f45a`)
-`NAME_LAW`, `NAME_ACR` (`acrrmx3f45a`), `NAME_UAMI`, `NAME_ACA_ENV`, `NAME_AISERVICES`
+`NAME_LAW`, `NAME_UAMI`, `NAME_AISERVICES`
 (`aifndry-rmx-3f45a`), `NAME_FOUNDRY_PROJECT` (`proj-rmx-3f45a`), `NAME_SEARCH` (`srch-rmx-3f45a`),
 `NAME_ACS` (`acs-rmx-3f45a`), `NAME_ACS_VIDEO`, `NAME_SPEECH`,
-`NAME_CA_TOOLAPI` (`ca-rmx-toolapi`), `NAME_CA_CRM` (`ca-rmx-dashboard`),
-`NAME_CA_VIDEOASSIST` (`videoassist-web`), `SEARCH_INDEX_NAME` (`contoso-retail-policy-index`).
+`NAME_VM` (`vm-rmx-host`) + `NAME_VM_NIC` / `NAME_VM_NSG` / `NAME_VM_VNET`,
+`SEARCH_INDEX_NAME` (`contoso-retail-policy-index`).
+The static IP `NAME_PERSIST_PIP` (`pip-rmx-persist`) lives in the separate, never-wiped
+`AZ_RG_PERSISTENT`. `NAME_ACR`, `NAME_ACA_ENV` and the three `NAME_CA_*` names were removed with the
+Container Apps.
 `EXISTING_*` remain as back‑compat aliases pointing at the created names.
 
 ### §6 Video Assist / Speech / ACS derived vars
@@ -387,18 +413,25 @@ timing knobs (`FAST_NUDGE_TIMEOUT_MS` 3400, `FAST_PATH_HEADSTART_MS` 300, `NUDGE
 (optional Step‑7 flows; empty → synthetic availability + record‑only bookings).
 
 ### §8b/§8c Tunables
-`PREBUILD_IMAGES` (1), `PHASE5_REBUILD_TOOLAPI` (0), `WIPE_PARALLEL_DELETES` (1), `BUILD_STAGE` (`all`).
+`WIPE_PARALLEL_DELETES` (1), `BUILD_STAGE` (`all`), plus the VM-era skips
+`SKIP_VMHOST` / `SKIP_DATAGEN` / `SKIP_TOOLAPI_VM` / `SKIP_CRM_VM` / `SKIP_VIDEOASSIST_VM` /
+`SKIP_CONSOLE` (all default 0). Note `SKIP_VMHOST=1` now means **no applications at all**, since all
+three run on that VM. `PREBUILD_IMAGES` and `PHASE5_REBUILD_TOOLAPI` were removed with the container
+build.
 
 ### §9 Helpers
 `log/warn/die/ok/confirm`, `ensure_az_login`, `ensure_rg`, `tag_args`, `assert_project_tag`,
 `regen_phase1_outputs` (rebuild `phase1-platform/outputs.env` from Azure if missing),
-`assert_foundation_present` (verify RG+ACR+UAMI+ACA‑env or die “run build_rg.sh first”),
-`print_demo_urls`.
+`assert_foundation_present` (verify RG+UAMI or die “run build_rg.sh first”),
+`ensure_toolapi_bearer` (resolve-or-mint the Tool API bearer and export it under BOTH names the
+codebase uses — `TOOLAPI_BEARER_TOKEN` for the FastAPI backend, `TOOLAPI_BEARER` for the Node app),
+`persist_ip` / `rmassist_host`, `print_demo_urls`.
 
-> **No Key Vault anywhere** (removed for good in v2.1.0). Every app secret is a **literal Container App
-> secret**; inter‑phase values flow through each phase’s `outputs.env`. The deployer never touches a
-> vault data plane, so the build is immune to the “Key Vault publicNetworkAccess=Disabled” policy that
-> broke earlier versions.
+> **No Key Vault anywhere** (removed for good in v2.1.0). Every app secret now lands in a root-owned
+> `0600` systemd `EnvironmentFile` on the VM (`/opt/rmx/etc/rmx.env` shared, plus one per app),
+> streamed over SSH stdin so it never appears in `ps` or `/proc/<pid>/cmdline`. Inter‑phase values
+> flow through each phase’s `outputs.env`. The deployer never touches a vault data plane, so the
+> build is immune to the “Key Vault publicNetworkAccess=Disabled” policy that broke earlier versions.
 
 ---
 
@@ -474,11 +507,14 @@ token** (`deps.require_bearer`); ACS callback endpoints are unauthenticated by n
 CRM writes are **human‑in‑the‑loop** (propose → `pending_approval` → RM approves); a **glass‑box audit
 trail** logs every material event; PII is masked before any LLM call (email/phone/PAN/GSTIN/Aadhaar/acct).
 
-**Config (`config.py`) / container:** env‑driven (`FOUNDRY_AOAI_ENDPOINT`, `FOUNDRY_CHAT_DEPLOYMENT`,
+**Config (`config.py`) / runtime:** env‑driven (`FOUNDRY_AOAI_ENDPOINT`, `FOUNDRY_CHAT_DEPLOYMENT`,
 `FOUNDRY_EMBED_DEPLOYMENT`, `SEARCH_ENDPOINT`, `SEARCH_INDEX_NAME`, `ACS_*`, `DATA_DIR`, `KB_DIR`,
-`CORS_ORIGINS`, `TOOLAPI_BEARER_TOKEN`). Image: `python:3.12`, runs `uvicorn app.main:app :8000` as a
-non‑root user; `/healthz`. phase4 generates the bearer **once**, persists it to `phase4/outputs.env`, and
-phases 5/6/9 read it from there (Key‑Vault‑free).
+`SOP_DIR`, `CORS_ORIGINS`, `TOOLAPI_BEARER_TOKEN`). Runs as `rmx-toolapi.service`:
+`uvicorn app.main:app --host 127.0.0.1 --port 8000` inside a venv, as an unprivileged service
+account; `/healthz`. `env.sh:ensure_toolapi_bearer` mints the bearer **once**, persists it to the
+git-ignored `infra/common/secrets.env`, and every consumer reads it from there (Key‑Vault‑free).
+Note `SOP_DIR` points at `data/sop` on the VM, populated from the repo's `docs/sop` — the deploy
+reproduces the rename the old image performed.
 
 > Some default strings in `config.py` still carry MSME‑era names (e.g. a `contoso-msme-policy-index`
 > default, `dev-bearer-change-me`), but **`env.sh` + the phase scripts override them all at deploy time**
@@ -543,11 +579,14 @@ is possible.
 
 ## 11. CRM dashboard (`frontend-crm/`)
 
-A static SPA (`html/index.html` + `app.js` + `ui.js` + `ui.css`) served by **nginx**. `nginx/10-inject-config.sh`
-injects runtime config (Tool‑API URL, bearer, Video Assist URL) at container start; `nginx/default.conf`
-proxies/serves. It renders the RM cockpit and the 7‑step RM‑Assist journey with an outcome‑first hero
+A static SPA (`html/index.html` + `app.js` + `ui.js` + `ui.css`) served **directly by Caddy** from
+`/opt/rmx/web` at `/`. `tools/deploy-crm-on-vm.sh` injects runtime config (Tool‑API URL, bearer,
+Video Assist URL) into `index.html` at **deploy** time, using the same three placeholder tokens the
+old nginx entrypoint used. It renders the RM cockpit and the 7‑step RM‑Assist journey with an
+outcome‑first hero
 (“Today’s AI‑driven outcome”: stance + one move + guardrail + open‑case counts) sharing one
-next‑best‑action fetch with the Strategy/Planner tabs. phase6 injects `VIDEOASSIST_URL` so **Step 7**
+next‑best‑action fetch with the Strategy/Planner tabs. The deploy injects `VIDEOASSIST_URL`
+(`https://<host>/video`) so **Step 7**
 launches the video call pre‑bound to `CTB-RTL-002`.
 
 ---
@@ -623,7 +662,9 @@ cd ~ && tar -xzf contoso-retail-rm-assist-rakesh-v2.1.8.tar.gz -C ~ contoso-reta
 
 **phase1 outputs missing when running `build.sh` in a fresh checkout** — `assert_foundation_present`
 calls `regen_phase1_outputs`, which reconstructs `phase1-platform/outputs.env` from Azure
-(ACR/UAMI/CAE). If ACR/UAMI are truly absent it tells you to run `build_rg.sh` first.
+(the UAMI). If the UAMI is truly absent it tells you to run `build_rg.sh` first. `phase10-vmhost`
+also calls the same helper directly, so running that phase standalone in a fresh clone self-heals
+instead of dying.
 
 **Names won’t free up after a full wipe** — the full wipe purges soft‑deleted CogSvc accounts
 (`NAME_AISERVICES`, `NAME_SPEECH`). If a purge failed, run:
@@ -645,15 +686,14 @@ chmod +x deploy.sh build_rg.sh build.sh wipe.sh
 
 **One-shot build:**
 ```bash
-bash deploy.sh                 # PTU (15-PTU gpt-4.1-mini)
-bash deploy.sh --type=payg     # PAYG (GlobalStandard)
+bash deploy.sh                 # foundation + billable stack in one process
 ```
 
 **Split build (recommended for locked-down subs):**
 ```bash
-bash build_rg.sh               # ONCE — non-billable foundation (RG + Log Analytics + ACR + UAMI + ACA env)
-bash build.sh                  # per demo — billable stack, PTU
-bash build.sh --type=payg      # per demo — billable stack, PAYG
+bash build_persistent.sh       # ONCE, EVER — static public IP (the only standing cost)
+bash build_rg.sh               # ONCE — non-billable foundation (RG + Log Analytics + UAMI)
+bash build.sh                  # per demo — billable stack (AI services + the application VM)
 ```
 
 **Wipe:**
@@ -672,8 +712,9 @@ curl -fsS "$VIDEOASSIST_URL/healthz"     # returns aiReady, grounding, teamsConf
 ```
 
 **Prerequisites on the runner:** `az` (logged in to the subscription in `env.sh`), `jq`, `curl`,
-`python3`, `sha256sum`, and the `containerapp` + `communication` az extensions (auto‑installed). Docker
-is **not** required locally — images build in ACR via `az acr build`.
+`python3`, `sha256sum`, `ssh`, `tar`, and the `communication` az extension (auto‑installed). Docker
+is **not** required — and is no longer used anywhere: the three applications are deployed onto the
+VM from source over SSH.
 
 ---
 

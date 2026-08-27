@@ -49,13 +49,14 @@ flowchart TB
     FND["AI Foundry account + project (AIServices)"]
     CHAT["gpt-5.4 chat deployment · GlobalStandard<br/>+ gpt-5.4-mini voice deployment"]
     EMB["text-embedding-3-small (embeddings)"]
-    PLAT["Platform: Log Analytics · ACR · Managed Identity · Container Apps env"]
+    PLAT["Platform: Log Analytics · Managed Identity (UAMI)"]
     SRCH["AI Search + SOP index"]
     ACS["Azure Communication Services (video tokens, no PSTN) + Email"]
     SPCH["Speech account · in-call STT (centralindia — not offered in southindia)"]
-    TOOL["Tool API (FastAPI container app)"]
-    CRM["CRM dashboard (container app)"]
-    VA["Video Assist (container app) — live call + nudges"]
+    VM["Application VM (Ubuntu) — Caddy TLS, sole public ingress"]
+    TOOL["Tool API — uvicorn on 127.0.0.1:8000 (rmx-toolapi.service) → /api"]
+    CRM["RM Assist cockpit — static files served by Caddy → /"]
+    VA["Video Assist — node on 127.0.0.1:3000 (rmx-videoassist.service) → /video"]
   end
 
   EXT["Teams / Power Automate webhook (external — NOT Azure-IaC'able)"]
@@ -170,8 +171,12 @@ Secrets are **never committed**: copy `infra/common/secrets.env.example` →
 
 - **Azure CLI** (`az`) logged in to the subscription in `env.sh` (`az login`). The Bicep CLI is
   installed on demand by `az`.
-- **Docker** (container images for the Tool API, CRM dashboard, and Video Assist are built and pushed to ACR).
 - **Bash** environment (Linux/macOS/WSL). The scripts are POSIX-bash and run non-interactively.
+- **`ssh`, `tar` and `curl`** — the three applications are deployed onto the VM from source over
+  SSH (tar-over-ssh), so no other transport tooling is needed.
+- **Docker is NOT required.** Nothing in this stack is containerised: there is no image build, no
+  container registry and no Container App. The Tool API and Video Assist run as native systemd
+  services on the VM and the cockpit is static files served straight off disk by Caddy.
 - Permissions to **create a resource group** and all resources within it, including creating/deleting
   an Azure AI Foundry (Cognitive Services) account and model deployments.
 - **Quota:** every model deployment this build creates is `GlobalStandard`, so only GlobalStandard
@@ -220,9 +225,10 @@ bash build.sh                 # next demo — no need to re-run build_rg.sh
 
 | Script | When | Creates / deletes | Billable? |
 |--------|------|-------------------|-----------|
-| `build_rg.sh` | once | Resource group + Log Analytics, ACR, UAMI, Container Apps env | No (ACR Basic ~$5/mo is the only standing cost) |
-| `build.sh [--type=…]` | per demo | AI Foundry account + project, chat + embedding deployments, AI Search, ACS + Email, Speech, Tool API, RAG index, CRM dashboard, Video Assist | **Yes** |
-| `wipe.sh` | after a demo | Deletes everything `build.sh` created; **keeps** the RG + platform | stops billing |
+| `build_persistent.sh` | once, ever | The **shared edge RG** holding the **static public IP** that anchors `rmassist.<ip>.nip.io` | Yes — a static IP is a few $/mo, and it is the **only standing cost**. Never wiped. |
+| `build_rg.sh` | once | Resource group + Log Analytics + UAMI | No standing cost |
+| `build.sh` | per demo | AI Foundry account + project, chat/voice/embedding deployments, AI Search, ACS + Email, Speech, the **application VM** and all three apps, RAG index | **Yes** |
+| `wipe.sh` | after a demo | **Deletes the whole billable RG** and purges soft-deleted Cognitive Services. Never touches the shared edge RG or the committed cert. `--keep-rg` keeps the RG + platform. | stops billing |
 
 `deploy.sh` is exactly `build_rg.sh` + `build.sh` in one process (`BUILD_STAGE=all`); `build_rg.sh`
 runs `BUILD_STAGE=foundation` and `build.sh` runs `BUILD_STAGE=apps`. All three share the same phase
@@ -270,18 +276,24 @@ On success the build prints the cockpit URL, the Video Assist URL, the Step 7 la
 (`…/?customer_id=CTB-RTL-002`), and a health check.
 
 > **Cost note:** all deployments are `GlobalStandard`, billing **per token used** rather than per
-> hour. Either way, run
-> `bash wipe.sh` when you're done — it deletes the billable stack, so **all** model/Search/ACS billing
-> stops (only the ~$5/mo ACR remains if you keep the foundation for the next demo).
+> hour. Run `bash wipe.sh` when you're done — it deletes the whole billable resource group, so
+> **all** model/Search/ACS/VM billing stops. The only thing left running is the **static public IP**
+> in the shared edge resource group (a few $/mo), which is deliberate: it is what keeps the hostname
+> `rmassist.<ip>.nip.io` stable and therefore keeps the committed TLS certificate reusable.
 
 ### Key Vault-free by design
 
 This stack uses **no Azure Key Vault**. Every application secret (the Tool API bearer token, the
-Foundry/Search/ACS endpoints and connection strings) is passed straight into the Container Apps as
-**literal secret values** — set as `@secure()` Bicep parameters or `az containerapp secret set`, and
-carried between phases via each phase's `outputs.env` file. The base container image for the CRM
-frontend is cached with an authenticated `az acr import` (inline Docker Hub credentials), not a
-KV-backed ACR credential set.
+ACS connection string, the Teams/Power Automate webhook URLs, the Graph client secret) is written to
+a **root-owned `0600` systemd `EnvironmentFile`** on the VM — `/opt/rmx/etc/rmx.env` for the shared
+values, plus a per-app file for each service. The values are streamed to the VM over SSH stdin,
+never passed as command arguments, so they never appear in `ps`, in `/proc/<pid>/cmdline`, or in
+shell history. systemd reads the file as root before dropping to the unprivileged service account,
+which is why `0600 root:root` is both correct and readable by the unit.
+
+The one secret that *is* committed is the TLS private key in `infra/cert/`, encrypted — and
+`infra/cert/README.md` is explicit that this is **obfuscation, not security**, because the AES key
+is committed beside it.
 
 The practical upshot: the build is **immune to subscription Azure Policies that lock down Key Vault
 public access** (`publicNetworkAccess=Disabled` / `ForbiddenByConnection`). There is nothing to heal,
@@ -290,29 +302,32 @@ exempt, or allow-list — the deployer never touches a vault data plane.
 ## Tear down
 
 ```bash
-bash wipe.sh                 # DEFAULT: delete the billable stack, KEEP the RG + platform
-bash wipe.sh --delete-rg     # FULL: delete the ENTIRE resource group + purge soft-deleted names
+bash wipe.sh                 # DEFAULT: FULL PURGE — delete the ENTIRE billable RG + purge names
+bash wipe.sh --keep-rg       # keep the RG + platform for a faster next build
 ```
 
-By **default** `wipe.sh` performs a **per-phase teardown that keeps the resource group and the Phase-1
-platform** (Log Analytics, ACR, UAMI, Container Apps env). It deletes the AI Foundry account
-+ project, both model deployments, AI Search, ACS + Email, Speech and the container apps — everything
-`build.sh` created — and purges the soft-deleted Cognitive Services accounts so their names free up for
-the next `build.sh`. This is the fast demo loop: `build_rg.sh` once, then `build.sh` / `wipe.sh` /
-`build.sh` / … without re-creating the foundation.
+By **default** `wipe.sh` performs the **full purge**: `az group delete` removes the entire billable
+resource group — the VM and all three applications, the AI Foundry account + project, every model
+deployment, AI Search, ACS + Email, Speech, Log Analytics and the UAMI — then the soft-deleted
+AIServices + Speech accounts are purged so every globally-unique name is immediately reusable.
 
-Pass **`--delete-rg`** (or `WIPE_DELETE_RG=1`) for the full **all-or-nothing** teardown: `az group
-delete` removes the entire resource group — foundation included — then the soft-deleted AIServices +
-Speech accounts are purged so every globally-unique name is immediately reusable.
+**Never touched by any wipe:** the shared edge resource group holding the **static public IP**, and
+the committed encrypted certificate in `infra/cert/` (which lives in git, not Azure). That pair is
+exactly what lets the next build come up on the same hostname with the same certificate and **no
+Let's Encrypt call**.
+
+Pass **`--keep-rg`** for the older, faster demo loop: a per-phase teardown that keeps the resource
+group and the Phase-1 platform (Log Analytics + UAMI), so `build.sh` / `wipe.sh --keep-rg` /
+`build.sh` / … skips re-creating the foundation each time.
 
 Safety & useful overrides:
 
 - The wipe **refuses to delete a resource group that isn't tagged** `project=contoso-retail-rm-assist-rakesh`
-  (protects you if `AZ_RG` is ever pointed at a shared RG). Override with `WIPE_FORCE=1 bash wipe.sh --delete-rg`.
-- `KEEP_PLATFORM=0 bash wipe.sh` — also tear down the Phase-1 platform (but still keep the empty RG).
-- `WIPE_RG_NOWAIT=1 bash wipe.sh --delete-rg` — submit the RG delete asynchronously and return immediately
+  (protects you if `AZ_RG` is ever pointed at a shared RG). Override with `WIPE_FORCE=1 bash wipe.sh`.
+- `KEEP_PLATFORM=0 bash wipe.sh --keep-rg` — also tear down the Phase-1 platform (but keep the empty RG).
+- `WIPE_RG_NOWAIT=1 bash wipe.sh` — submit the RG delete asynchronously and return immediately
   (skips the soft-delete purges, since the delete hasn't finished yet).
-- `WIPE_PURGE_SOFT_DELETED=0 bash wipe.sh --delete-rg` — skip purging soft-deleted CogSvc accounts.
+- `WIPE_PURGE_SOFT_DELETED=0 bash wipe.sh` — skip purging soft-deleted CogSvc accounts.
 
 ---
 
@@ -325,7 +340,7 @@ safe fallback (set the env var to disable and you get the old behavior exactly):
 |---------|---------|--------------|
 | `PREBUILD_IMAGES` | `1` | Builds the three container images (Tool API, Video Assist, CRM dashboard) **concurrently in the background** right after phase1, so they finish *while* phase2 provisions AI Search (the ~10-min long pole). Phases 4/6/9 then reuse the ready images instead of building serially across later waves. If any pre-build fails, that phase falls back to building inline. Set `0` to build inline as before. |
 | `PHASE5_REBUILD_TOOLAPI` | `0` | Skips phase5's Tool API image rebuild — phase4's image already contains `rag.py`/`search.py` and RAG is read from AI Search at runtime, so no redeploy is needed just to "enable RAG". Set `1` to force a rebuild+redeploy (e.g. if you changed backend code between phase4 and phase5). |
-| `WIPE_PARALLEL_DELETES` | `1` | Tears down independent resources **concurrently**: phase1's ~15-min Container Apps Environment delete overlaps the KV/ACR/Log-Analytics/UAMI deletes, and phase2 deletes AI Search in parallel with ACS/Email. All tag assertions still run up-front *before* any delete, so teardown safety is unchanged. Set `0` for sequential deletes. |
+| `WIPE_PARALLEL_DELETES` | `1` | Tears down independent resources **concurrently**: phase1 deletes Log Analytics and the UAMI in parallel, and phase2 deletes AI Search in parallel with ACS/Email. (This mattered far more when phase1 also had a ~15-minute Container Apps Environment delete to overlap; that resource is gone, so the win is now modest.) All tag assertions still run up-front *before* any delete, so teardown safety is unchanged. Set `0` for sequential deletes. |
 
 Net effect: deploy ≈ **18–20 min** (was ~30) by overlapping ~10–12 min of image builds under phase2 and
 dropping the redundant phase5 rebuild; wipe is meaningfully faster via the parallel phase1 teardown.
@@ -489,8 +504,8 @@ infra/
 tools/
   deploy-toolapi-on-vm.sh · deploy-crm-on-vm.sh · deploy-videoassist-on-vm.sh
   deploy-console-on-vm.sh · run-generation-on-vm.sh · cert_store.sh · commit-artifacts.sh
-backend/             FastAPI Tool API (app/, Dockerfile, requirements.txt)
-frontend-crm/        CRM dashboard (html/, nginx/, Dockerfile)
+backend/             FastAPI Tool API (app/, requirements.txt) — deployed to the VM, no image
+frontend-crm/        RM Assist cockpit (html/) — static files, served by Caddy at /
 videoassist/         Live video-call + nudge app (Node/Vite; server.js, nudge-engine.js, client/)
 corebank-console/    Core Banking + CRM single-pane console (static SPA) — index.html, assets/{styles.css,app.js}
 data/                Synthetic CSVs + knowledge base + data/contosobank/ (generated dataset + generators)

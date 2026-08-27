@@ -50,6 +50,7 @@ RG $AZ_RG · region $AZ_REGION · tag $PROJECT_TAG   [RG CREATED by this build]
 Stage: $BUILD_STAGE  ($([ "$BUILD_STAGE" == "foundation" ] && echo "phase0+phase1 only — non-billable foundation" || { [ "$BUILD_STAGE" == "apps" ] && echo "phase2..phase9 — billable, reuses the existing foundation" || echo "all phases — one-shot"; }))
 Creates AI Foundry: $NAME_AISERVICES / $NAME_FOUNDRY_PROJECT
 Chat model: $AOAI_CHAT_DEPLOYMENT_NAME ($AOAI_CHAT_MODEL_NAME, $AOAI_CHAT_SKU_NAME) in $AZ_REGION_AOAI — created by phase2, deleted with the RG on wipe
+Voice model: $([ "${VOICE_MODEL_ENABLED:-1}" == "1" ] && echo "$AOAI_VOICE_DEPLOYMENT_NAME ($AOAI_VOICE_MODEL_NAME, $AOAI_VOICE_SKU_NAME, reasoning_effort=$VOICE_AI_REASONING_EFFORT) in $AZ_REGION_AOAI — created by phase2" || echo "DISABLED (VOICE_MODEL_ENABLED=0) — live-call path reuses $AOAI_CHAT_DEPLOYMENT_NAME")
 Embed model: $AOAI_EMBED_DEPLOYMENT_NAME ($AOAI_EMBED_SKU_NAME) — created by phase2, deleted with the RG on wipe
 Data-gen VM: $([ "${SKIP_VMHOST:-0}" == "1" ] && echo "SKIPPED (SKIP_VMHOST=1)" || echo "$NAME_VM + Caddy/TLS at $(rmassist_host 2>/dev/null || echo 'rmassist.<ip>.nip.io') — keyless gpt-5.4 generation")
 Logs: ${ACS_BUILD_LOGDIR:-/tmp/acs_build_logs}/<phase>.up.log

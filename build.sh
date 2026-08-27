@@ -64,6 +64,11 @@ echo "Target resource group: $AZ_RG ($AZ_REGION)   [foundation auto-created if m
 echo "Persistent layer: $AZ_RG_PERSISTENT (static IP -> $(rmassist_host 2>/dev/null || echo 'rmassist.<ip>.nip.io')) [auto-created once; never wiped]"
 echo "Creating AI Foundry account: $NAME_AISERVICES / $NAME_FOUNDRY_PROJECT"
 echo "Chat model: CREATE '$AOAI_CHAT_DEPLOYMENT_NAME' ($AOAI_CHAT_MODEL_NAME, $AOAI_CHAT_SKU_NAME) in $AZ_REGION_AOAI — deleted by wipe.sh"
+if [[ "${VOICE_MODEL_ENABLED:-1}" == "1" ]]; then
+  echo "Voice model: CREATE '$AOAI_VOICE_DEPLOYMENT_NAME' ($AOAI_VOICE_MODEL_NAME, $AOAI_VOICE_SKU_NAME, reasoning_effort=$VOICE_AI_REASONING_EFFORT) in $AZ_REGION_AOAI — deleted by wipe.sh"
+else
+  echo "Voice model: DISABLED (VOICE_MODEL_ENABLED=0) — the live-call path reuses '$AOAI_CHAT_DEPLOYMENT_NAME'"
+fi
 echo "Embedding model: CREATE '$AOAI_EMBED_DEPLOYMENT_NAME' ($AOAI_EMBED_SKU_NAME) — deleted by wipe.sh"
 echo "Data-gen + Caddy/TLS VM: CREATE '$NAME_VM' (keyless gpt-5.4 generation via managed identity)"
 if [[ "$REGENERATE_DATA" == "1" ]]; then

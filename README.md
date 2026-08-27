@@ -47,7 +47,7 @@ flowchart TB
   subgraph Created["Everything CREATED + DESTROYED by this stack — new RG in South India (tag: contoso-retail-rm-assist-rakesh)"]
     RG["Resource group: rg-contoso-rmx-rakesh (southindia)"]
     FND["AI Foundry account + project (AIServices)"]
-    CHAT["gpt-4.1-mini chat deployment · 15 PTU (or PAYG)"]
+    CHAT["gpt-5.4 chat deployment · GlobalStandard<br/>+ gpt-5.4-mini voice deployment"]
     EMB["text-embedding-3-small (embeddings)"]
     PLAT["Platform: Log Analytics · ACR · Managed Identity · Container Apps env"]
     SRCH["AI Search + SOP index"]
@@ -172,8 +172,8 @@ Secrets are **never committed**: copy `infra/common/secrets.env.example` →
 - **Bash** environment (Linux/macOS/WSL). The scripts are POSIX-bash and run non-interactively.
 - Permissions to **create a resource group** and all resources within it, including creating/deleting
   an Azure AI Foundry (Cognitive Services) account and model deployments.
-- **Quota:** a `GlobalProvisionedManaged` (PTU) chat deployment needs GlobalProvisionedManaged quota on
-  the subscription (default build); `--type=payg` uses `GlobalStandard` quota instead. `gpt-4.1-mini`
+- **Quota:** every model deployment this build creates is `GlobalStandard`, so only GlobalStandard
+  quota is needed — `gpt-5.4` (chat), `gpt-5.4-mini` (voice) and `text-embedding-3-small`. `gpt-5.4`
   and `text-embedding-3-small` must be offered in `AZ_REGION` (default `southindia`) — change the region
   in `env.sh` if not.
 - **Region-bound services move out of South India automatically.** AI Search and the standalone Speech
@@ -198,8 +198,7 @@ locked-down subscriptions (it does the one-time, RG-level setup separately from 
 ### Option A — one-shot (`deploy.sh`)
 
 ```bash
-bash deploy.sh                 # DEFAULT: create a 15-PTU gpt-4.1-mini chat deployment
-bash deploy.sh --type=payg     # instead create a pay-as-you-go (GlobalStandard) chat deployment
+bash deploy.sh                 # one-shot wrapper: gpt-5.4 (GlobalStandard) + gpt-5.4-mini voice deployment
 ```
 
 Creates the resource group **and** everything inside it in a single run.
@@ -211,7 +210,7 @@ demo cycles (so each demo is just the fast, billable app build + teardown):
 
 ```bash
 bash build_rg.sh              # run ONCE — creates RG + platform (non-billable)
-bash build.sh                 # per demo — billable stack (PTU).  build.sh --type=payg for PAYG
+bash build.sh                 # per demo — billable stack (gpt-5.4 GlobalStandard; no flags needed)
 # ... run your demo ...
 bash wipe.sh                  # after a demo — deletes the billable stack, KEEPS the RG + platform
 bash build.sh                 # next demo — no need to re-run build_rg.sh
@@ -231,7 +230,7 @@ scripts and `env.sh`, so behavior is identical — only *how much* runs per invo
 
 | `--type` | Chat deployment created | SKU | Deleted by `wipe.sh`? |
 |----------|-------------------------|-----|-----------------------|
-| *(none)* / `ptu` **(default)** | `gpt-4.1-mini-ptu` | `GlobalProvisionedManaged`, **15 PTU** | ✅ yes |
+| *(none)* **(default)** | `gpt-5-4` (chat) + `gpt-54-mini-voice` (voice) | `GlobalStandard`, pay-per-token | ✅ yes |
 | `payg` | `gpt-4.1-mini-payg` | `GlobalStandard`, pay-as-you-go | ✅ yes |
 
 - **Both modes CREATE the chat deployment** and **delete it on wipe**. The only difference is the SKU:
@@ -257,8 +256,8 @@ The build runs `infra/rebuild-parallel.sh`, which builds in dependency-ordered w
 On success the build prints the CRM dashboard URL, the Video Assist URL, the Step 7 launch link
 (`…/?customer_id=CTB-RTL-002`), and a health check.
 
-> **Cost note:** a `GlobalProvisionedManaged` (PTU) deployment bills **per hour while it exists**,
-> whether or not you send traffic. `--type=payg` bills per token instead. Either way, run
+> **Cost note:** all deployments are `GlobalStandard`, billing **per token used** rather than per
+> hour. Either way, run
 > `bash wipe.sh` when you're done — it deletes the billable stack, so **all** model/Search/ACS billing
 > stops (only the ~$5/mo ACR remains if you keep the foundation for the next demo).
 
@@ -354,7 +353,7 @@ Every variable is listed below with its pre-filled demo value. Override any of t
 | `PROJECT_TAG` | `project=contoso-retail-rm-assist-rakesh` | Combined |
 | `SUFFIX` | sha256-derived (5 chars) | Makes globally-unique names |
 
-### 4) Chat + embedding models — selected by `DEPLOY_TYPE` (`--type=ptu` default, or `--type=payg`)
+### 4) Chat, voice + embedding models — a single `GlobalStandard` profile
 
 `DEPLOY_TYPE` (exported by `deploy.sh`/`wipe.sh` from `--type=`; default `ptu`) picks one of two
 profiles. In **both** profiles the chat deployment is CREATED in the new RG and DELETED with it on wipe;
@@ -362,16 +361,18 @@ only the SKU/name/capacity differ. The embedding deployment is always created to
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `DEPLOY_TYPE` | `ptu` | `ptu` = create a 15-PTU deployment · `payg` = create a GlobalStandard pay-as-you-go one |
+| `DEPLOY_TYPE` | `payg` | Accepted on `--type=` for backward compatibility; it NO LONGER switches the model or SKU |
 | `AOAI_CHAT_MODEL_NAME` | `gpt-4.1-mini` | Chat model (both profiles) |
 | `AOAI_CHAT_MODEL_FORMAT` | `OpenAI` | |
 | `AOAI_CHAT_MODEL_VERSION` | *(empty)* | Empty ⇒ auto-discover latest version in the region |
-| `AOAI_CHAT_PAYG_DEPLOYMENT_NAME` | `gpt-4.1-mini-payg` | **PAYG profile:** deployment name to create |
-| `AOAI_CHAT_PAYG_SKU_NAME` | `GlobalStandard` | PAYG SKU |
-| `AOAI_CHAT_PAYG_SKU_CAPACITY` | `50` | PAYG capacity (×1K TPM quota units) |
-| `AOAI_CHAT_PTU_DEPLOYMENT_NAME` | `gpt-4.1-mini-ptu` | **PTU profile:** deployment name to create |
-| `AOAI_CHAT_PTU_SKU_NAME` | `GlobalProvisionedManaged` | PTU SKU |
-| `AOAI_CHAT_PTU_SKU_CAPACITY` | `15` | **15 PTU** |
+| `AOAI_CHAT_DEPLOYMENT_NAME` | `gpt-5-4` | Chat deployment name (Azure names disallow `.`) |
+| `AOAI_CHAT_SKU_NAME` / `AOAI_CHAT_SKU_CAPACITY` | `GlobalStandard` / `50` | Pay-per-token; ×1K TPM quota units |
+| `VOICE_MODEL_ENABLED` | `1` | **Voice deployment (3rd model).** Edit to `0` to send the live-call path back to the chat deployment |
+| `AOAI_VOICE_MODEL_NAME` | `gpt-5.4-mini` | Faster reasoning model for the latency-critical in-call nudge path |
+| `AOAI_VOICE_DEPLOYMENT_NAME` | `gpt-54-mini-voice` | **phase2 checks idempotency by NAME, so changing the model needs a new name too** |
+| `AOAI_VOICE_SKU_NAME` / `AOAI_VOICE_SKU_CAPACITY` | `GlobalStandard` / `50` | |
+| `VOICE_AI_REASONING_EFFORT` | `low` | Keeps in-call latency inside the nudge freshness window |
+| `AI_REASONING_DEPLOYMENTS` | *(derived)* | Deployments needing the reasoning request shape. Includes the CHAT deployment because `gpt-5.4` is itself a reasoning model |
 | `AOAI_CHAT_DEPLOYMENT_NAME` / `AOAI_CHAT_SKU_NAME` / `AOAI_CHAT_SKU_CAPACITY` | *(resolved)* | Active values from the selected profile |
 | `AOAI_CHAT_MANAGE_LIFECYCLE` | `1` | Always create + delete (both profiles) |
 | `AOAI_CHAT_PROTECTED_DEPLOYMENTS` | *(empty)* | Space-separated names `wipe` will never delete (unused here — whole RG is deleted) |
@@ -461,7 +462,7 @@ only the SKU/name/capacity differ. The embedding deployment is always created to
 ```
 env.sh (single source of truth) ──▶ infra/common/env.sh
 build_rg.sh          foundation build (run once — RG + platform, non-billable)
-build.sh             billable build (per demo — phases 2-9)   [--type=ptu|payg]
+build.sh             billable build (per demo — phases 2-9)   (no flags needed)
 deploy.sh            one-shot deploy wrapper (build_rg + build combined)
 wipe.sh              teardown wrapper (keeps the RG by default; --delete-rg for full)
 infra/

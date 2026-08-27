@@ -2,7 +2,8 @@
 # deploy.sh — one-command deploy for the Contoso Retail "RM Assist — Rakesh Sharma" demo.
 #
 # ALL-OR-NOTHING, SELF-CONTAINED build. Creates a brand-new resource group and provisions
-# EVERYTHING inside it (AI Foundry account + project, the chat model deployment [PTU or PAYG],
+# EVERYTHING inside it (AI Foundry account + project, the gpt-5.4 chat deployment and the
+# gpt-5.4-mini voice deployment,
 # the embedding deployment, AI Search, ACS + Email, Speech, Tool API, RAG index, CRM dashboard,
 # and the Video Assist live-call app). Nothing pre-existing is reused. Region and every
 # name/value are configurable in infra/common/env.sh.
@@ -10,7 +11,7 @@
 # This is the ONE-SHOT wrapper (foundation + billable stack together). For locked-down
 # subscriptions, prefer the 3-script split so RG-level setup runs once:
 #   bash build_rg.sh   (once — RG + platform, non-billable)
-#   bash build.sh      (per demo — billable stack)   [--type=ptu|payg]
+#   bash build.sh      (per demo — billable stack)
 #   bash wipe.sh       (after a demo — keeps the RG + foundation)
 #
 # All configuration lives in infra/common/env.sh — nothing is required from your shell
@@ -21,31 +22,33 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
 # ---- CLI args -------------------------------------------------------------------------
-# --type=ptu   (default) create a 15-PTU gpt-4.1-mini deployment (GlobalProvisionedManaged).
-# --type=payg            create a pay-as-you-go gpt-4.1-mini deployment (GlobalStandard).
+# --type=payg|ptu is accepted for backward compatibility but NO LONGER switches the model
+# or SKU: this build always creates a single gpt-5.4 GlobalStandard chat deployment plus the
+# gpt-5.4-mini voice deployment. Retarget via AOAI_CHAT_* / AOAI_VOICE_* in infra/common/env.sh.
 # In BOTH modes the chat deployment is CREATED in the new RG and DELETED with it on wipe.
 # Parsed BEFORE sourcing env.sh so env.sh can select the deployment profile, and exported
 # so every phase (spawned by rebuild-parallel) inherits it.
-DEPLOY_TYPE="${DEPLOY_TYPE:-ptu}"
+DEPLOY_TYPE="${DEPLOY_TYPE:-payg}"
 usage() {
   cat <<'USAGE'
-Usage: bash deploy.sh [--type=ptu|payg]
-  --type=ptu    (default) create a 15-PTU gpt-4.1-mini chat deployment (GlobalProvisionedManaged).
-  --type=payg   create a pay-as-you-go gpt-4.1-mini chat deployment (GlobalStandard).
+Usage: bash deploy.sh [--type=payg|ptu]
+  (no arguments)  DEFAULT and recommended.
+  --type=payg|ptu accepted for backward compatibility; it does NOT change the model or SKU.
+                  This build always creates gpt-5.4 (GlobalStandard) + the gpt-5.4-mini voice deployment.
   Both modes create the deployment inside the new RG; wipe deletes the whole RG.
 USAGE
 }
 for arg in "$@"; do
   case "$arg" in
     --type=*)  DEPLOY_TYPE="${arg#*=}" ;;
-    --type)    echo "Use '--type=ptu' or '--type=payg' (with '=')." >&2; exit 2 ;;
+    --type)    echo "Use '--type=payg' or '--type=ptu' (with '=')." >&2; exit 2 ;;
     -h|--help) usage; exit 0 ;;
     *)         echo "Unknown argument: $arg" >&2; usage >&2; exit 2 ;;
   esac
 done
 case "$DEPLOY_TYPE" in
   ptu|payg) ;;
-  *) echo "Invalid --type '$DEPLOY_TYPE' (expected 'ptu' or 'payg')." >&2; exit 2 ;;
+  *) echo "Invalid --type '$DEPLOY_TYPE' (expected 'payg' or 'ptu')." >&2; exit 2 ;;
 esac
 export DEPLOY_TYPE
 
@@ -63,10 +66,11 @@ source infra/common/env.sh
 echo
 echo "Target resource group: $AZ_RG ($AZ_REGION)   [CREATED by this build — all-or-nothing]"
 echo "Creating AI Foundry account: $NAME_AISERVICES / $NAME_FOUNDRY_PROJECT"
-if [[ "$DEPLOY_TYPE" == "payg" ]]; then
-  echo "Chat model [--type=payg]: CREATE '$AOAI_CHAT_DEPLOYMENT_NAME' ($AOAI_CHAT_SKU_NAME, pay-as-you-go) — deleted with the RG on wipe"
+echo "Chat model: CREATE '$AOAI_CHAT_DEPLOYMENT_NAME' ($AOAI_CHAT_MODEL_NAME, $AOAI_CHAT_SKU_NAME) in $AZ_REGION_AOAI — deleted with the RG on wipe"
+if [[ "${VOICE_MODEL_ENABLED:-1}" == "1" ]]; then
+  echo "Voice model: CREATE '$AOAI_VOICE_DEPLOYMENT_NAME' ($AOAI_VOICE_MODEL_NAME, $AOAI_VOICE_SKU_NAME, reasoning_effort=$VOICE_AI_REASONING_EFFORT) in $AZ_REGION_AOAI — deleted with the RG on wipe"
 else
-  echo "Chat model [--type=ptu]: CREATE '$AOAI_CHAT_DEPLOYMENT_NAME' ($AOAI_CHAT_SKU_NAME, ${AOAI_CHAT_SKU_CAPACITY} PTU) — deleted with the RG on wipe"
+  echo "Voice model: DISABLED (VOICE_MODEL_ENABLED=0) — the live-call path reuses '$AOAI_CHAT_DEPLOYMENT_NAME'"
 fi
 echo "Embedding model: CREATE '$AOAI_EMBED_DEPLOYMENT_NAME' ($AOAI_EMBED_SKU_NAME) — deleted with the RG on wipe"
 if [[ -n "${TEAMS_WEBHOOK_URL:-}" ]]; then

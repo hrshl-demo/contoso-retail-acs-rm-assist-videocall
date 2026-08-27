@@ -26,24 +26,19 @@ done
 [[ $MISSING_NOW -eq 1 ]] && die "Install missing tools above before continuing."
 
 log "Ensuring az CLI extensions..."
-# The 'containerapp' extension is no longer needed: nothing is containerised. Add extensions
-# back to this loop if a future phase needs one.
-for ext in ; do
-  if az extension show --name "$ext" >/dev/null 2>&1; then ok "Extension installed: $ext"
-  else log "Installing extension: $ext"; az extension add --name "$ext" --only-show-errors; ok "Installed: $ext"; fi
-done
+# No az CLI extensions are required. The 'containerapp' extension was dropped when the apps
+# moved off Container Apps onto the phase10 VM. If a future phase needs one, add a loop here.
 ok "No extra az extensions required."
 
 log "Registering resource providers (idempotent)..."
 PROVIDERS=(
-  Microsoft.App                     # Container Apps
-  Microsoft.ContainerRegistry       # ACR
+  Microsoft.Compute                 # the phase10 VM (Caddy + the three app services)
+  Microsoft.Network                 # the VM's VNet / NIC / NSG, and the persistent static IP
   Microsoft.ManagedIdentity         # UAMI
   Microsoft.OperationalInsights     # Log Analytics
   Microsoft.CognitiveServices       # AOAI + Speech (Voice Live backing)
   Microsoft.Search                  # AI Search
   Microsoft.Communication           # ACS (email)
-  Microsoft.Network                 # implicit dep for ACA
   Microsoft.Insights                # diagnostics
 )
 for rp in "${PROVIDERS[@]}"; do

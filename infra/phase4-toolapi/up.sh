@@ -105,6 +105,8 @@ az deployment group create \
       acsCognitiveServicesEndpoint="${ACS_COGNITIVE_SERVICES_ENDPOINT:-}" \
       acsEnableMediaSpeechFallback="${ACS_ENABLE_MEDIA_SPEECH_FALLBACK:-true}" \
       acsTranscriptionMode="${ACS_TRANSCRIPTION_MODE:-media}" \
+      aiReasoningDeployments="${AI_REASONING_DEPLOYMENTS:-}" \
+      voiceAiReasoningEffort="${VOICE_AI_REASONING_EFFORT:-low}" \
   --only-show-errors -o table
 ok "Container App deployed."
 

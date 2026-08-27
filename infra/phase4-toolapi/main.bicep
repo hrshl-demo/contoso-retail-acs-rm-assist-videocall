@@ -92,6 +92,17 @@ param acsTranscriptionMode string = 'media'
 @description('Azure AI Services endpoint used by ACS transcription.')
 param acsCognitiveServicesEndpoint string = ''
 
+@description('''Comma-separated deployment names that must use the reasoning-model request
+shape (reasoning_effort + max_completion_tokens, no temperature). Read by
+backend/app/services/llm.py. On this stack the CHAT deployment is gpt-5.4, itself a
+reasoning model, so it is normally listed here alongside the voice deployment. The backend
+also name-matches gpt-5/o-series as a fallback, but deployment names are free-form, so this
+explicit list is what keeps a renamed deployment (e.g. contoso-chat) working.''')
+param aiReasoningDeployments string = ''
+
+@description('Reasoning budget for reasoning-model requests (low|medium|high). Read by backend/app/services/llm.py.')
+param voiceAiReasoningEffort string = 'low'
+
 resource cae 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: acaEnvName
 }
@@ -169,6 +180,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'ACS_COGNITIVE_SERVICES_ENDPOINT', value: acsCognitiveServicesEndpoint }
             { name: 'ACS_ENABLE_MEDIA_SPEECH_FALLBACK', value: acsEnableMediaSpeechFallback }
             { name: 'ACS_TRANSCRIPTION_MODE',        value: acsTranscriptionMode }
+            { name: 'AI_REASONING_DEPLOYMENTS',      value: aiReasoningDeployments }
+            { name: 'VOICE_AI_REASONING_EFFORT',     value: voiceAiReasoningEffort }
             { name: 'AZURE_CLIENT_ID', value: reference(uamiResourceId, '2023-01-31').clientId }
           ]
           probes: [

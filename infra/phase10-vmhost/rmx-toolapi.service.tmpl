@@ -8,13 +8,14 @@
 # BINDS 127.0.0.1 ONLY. Caddy is the sole public ingress; this process must never be
 # reachable from the internet. The --host is explicit rather than relying on the NSG.
 #
-# Tokens:
-#   __APP_USER__        unprivileged service account
-#   __TOOLAPI_DIR__     /opt/rmx/toolapi (venv + backend/ + data/ live here)
-#   __TOOLAPI_HOST__    127.0.0.1
-#   __TOOLAPI_PORT__    8000
-#   __ENV_FILE__        root-owned 0600 EnvironmentFile holding the SHARED secrets
-#   __APP_ENV_FILE__    root-owned 0600 EnvironmentFile holding this app's own config
+# Tokens (each is the NAME below wrapped in double underscores, written that way here so
+# this comment still reads correctly in the RENDERED unit file):
+#   APP_USER        unprivileged service account
+#   TOOLAPI_DIR     /opt/rmx/toolapi (venv + backend/ + data/ live here)
+#   TOOLAPI_HOST    127.0.0.1
+#   TOOLAPI_PORT    8000
+#   ENV_FILE        root-owned 0600 EnvironmentFile holding the SHARED secrets
+#   APP_ENV_FILE    root-owned 0600 EnvironmentFile holding this app's own config
 #
 # Two EnvironmentFiles, deliberately: the shared one carries secrets used by more than one
 # service (and the managed-identity pin), the app one carries per-app config written by that

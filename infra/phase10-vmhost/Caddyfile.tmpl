@@ -6,12 +6,13 @@
 # application processes that bind 127.0.0.1 only. Nothing else on the VM is reachable from
 # the internet (the NSG opens TCP 22/80/443 and nothing more).
 #
-# Tokens substituted at deploy time:
-#   __RMASSIST_HOST__      stable host, e.g. rmassist.4.5.6.7.nip.io
-#   __LETSENCRYPT_EMAIL__  ACME registration email
-#   __ACME_CA__            ACME directory URL (production or staging)
-#   __TOOLAPI_BIND__       e.g. 127.0.0.1:8000   (uvicorn / FastAPI, rmx-toolapi.service)
-#   __VIDEOASSIST_BIND__   e.g. 127.0.0.1:3000   (node server.js, rmx-videoassist.service)
+# Tokens substituted at deploy time (each is the NAME below wrapped in double underscores,
+# written that way here so this comment still reads correctly in the RENDERED file):
+#   RMASSIST_HOST      stable host, e.g. rmassist.4.5.6.7.nip.io
+#   LETSENCRYPT_EMAIL  ACME registration email
+#   ACME_CA            ACME directory URL (production or staging)
+#   TOOLAPI_BIND       e.g. 127.0.0.1:8000   (uvicorn / FastAPI, rmx-toolapi.service)
+#   VIDEOASSIST_BIND   e.g. 127.0.0.1:3000   (node server.js, rmx-videoassist.service)
 #
 # ROUTING — one hostname, path prefixes, so ONE cert and ONE ACME order cover everything:
 #   /             -> file_server over /opt/rmx/web   (CRM cockpit, pure static)

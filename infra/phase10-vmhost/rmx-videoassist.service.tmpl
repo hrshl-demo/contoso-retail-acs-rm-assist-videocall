@@ -8,14 +8,15 @@
 # BINDS 127.0.0.1 ONLY, via the HOST env var that server.js passes to app.listen().
 # Caddy is the sole public ingress. Binding is explicit rather than relying on the NSG.
 #
-# Tokens:
-#   __APP_USER__            unprivileged service account
-#   __VIDEOASSIST_DIR__     /opt/rmx/videoassist (server.js, node_modules, dist/ live here)
-#   __VIDEOASSIST_HOST__    127.0.0.1
-#   __VIDEOASSIST_PORT__    3000
-#   __NODE_BIN__            absolute path to node (NodeSource install: /usr/bin/node)
-#   __ENV_FILE__            root-owned 0600 EnvironmentFile holding the SHARED secrets
-#   __APP_ENV_FILE__        root-owned 0600 EnvironmentFile holding this app's own config
+# Tokens (each is the NAME below wrapped in double underscores, written that way here so
+# this comment still reads correctly in the RENDERED unit file):
+#   APP_USER            unprivileged service account
+#   VIDEOASSIST_DIR     /opt/rmx/videoassist (server.js, node_modules, dist/ live here)
+#   VIDEOASSIST_HOST    127.0.0.1
+#   VIDEOASSIST_PORT    3000
+#   NODE_BIN            absolute path to node (NodeSource install: /usr/bin/node)
+#   ENV_FILE            root-owned 0600 EnvironmentFile holding the SHARED secrets
+#   APP_ENV_FILE        root-owned 0600 EnvironmentFile holding this app's own config
 #
 # Two EnvironmentFiles, deliberately: the shared one carries secrets used by more than one
 # service (and the managed-identity pin), the app one carries per-app config written by that

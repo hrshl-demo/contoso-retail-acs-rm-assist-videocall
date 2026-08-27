@@ -2,12 +2,13 @@
 # infra/phase10-vmhost/cloud-init.yaml  (TEMPLATE)
 #
 # Rendered by infra/phase10-vmhost/up.sh — the following placeholders are substituted before
-# the file is base64-encoded into the VM customData:
-#   __RMASSIST_HOST__      the stable host, e.g. rmassist.4.5.6.7.nip.io
-#   __LETSENCRYPT_EMAIL__  ACME registration email
-#   __ACME_CA__            the ACME directory URL (production or staging)
-#   __ADMIN_USER__         the VM admin user (owns the generation workspace)
-#   __APP_USER__           the unprivileged service account the app units run as
+# the file is base64-encoded into the VM customData. Each is the NAME below wrapped in double
+# underscores, written that way here so this comment still reads correctly once rendered:
+#   RMASSIST_HOST      the stable host, e.g. rmassist.4.5.6.7.nip.io
+#   LETSENCRYPT_EMAIL  ACME registration email
+#   ACME_CA            the ACME directory URL (production or staging)
+#   ADMIN_USER         the VM admin user (owns the generation workspace)
+#   APP_USER           the unprivileged service account the app units run as
 #
 # It provisions the RUNTIME for the three workloads that used to be Container Apps:
 #   * Caddy            sole public ingress, TLS on :443

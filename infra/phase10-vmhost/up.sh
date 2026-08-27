@@ -28,12 +28,18 @@ ensure_rg
 # The VM carries this identity so the app services inherit the Foundry/Search/ACS role
 # assignments phase2 already granted to it. Re-keying those grants to a VM principal would
 # be circular: phase2 runs before this VM exists.
+#
+# outputs.env is git-ignored, so a FRESH CLONE (e.g. on the jump host) will not have it even
+# though the Azure resources exist. build.sh already calls assert_foundation_present, which
+# regenerates it — but this phase can also be run standalone, so reuse the same env.sh helper
+# rather than dying on a file that is trivially reconstructible from Azure.
 PHASE1_OUT="$SCRIPT_DIR/../phase1-platform/outputs.env"
+[[ -f "$PHASE1_OUT" ]] || regen_phase1_outputs
 [[ -f "$PHASE1_OUT" ]] || die "Missing outputs: $PHASE1_OUT (run phase1 first)."
 # shellcheck disable=SC1090
 source "$PHASE1_OUT"
 [[ -n "${UAMI_ID:-}" && -n "${UAMI_CLIENT_ID:-}" ]] \
-  || die "Incomplete phase1 outputs (need UAMI_ID and UAMI_CLIENT_ID)."
+  || die "Incomplete phase1 outputs (need UAMI_ID and UAMI_CLIENT_ID). Re-run 'bash build_rg.sh'."
 ok "Loaded phase1 outputs (UAMI client id ${UAMI_CLIENT_ID})"
 
 # ---------- Require the persistent layer (static IP -> stable host) ----------
@@ -221,8 +227,8 @@ vm_pipe_in "$VIDEOASSIST_UNIT_RENDERED" 'sudo tee /etc/systemd/system/rmx-videoa
 vm_ssh 'sudo systemctl daemon-reload' || die "systemctl daemon-reload failed on the VM."
 # Fail loudly here rather than at the first request: a Caddyfile typo would otherwise only
 # surface as a Caddy start failure inside the cert flow, where it looks like an ACME problem.
-vm_ssh 'sudo caddy validate --config /etc/caddy/Caddyfile' >/dev/null 2>&1 \
-  || die "The rendered Caddyfile is INVALID on the VM. Run: ssh ${VM_ADMIN_USER}@${PERSIST_IP} sudo caddy validate --config /etc/caddy/Caddyfile"
+vm_ssh 'sudo caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile' >/dev/null 2>&1 \
+  || die "The rendered Caddyfile is INVALID on the VM. Run: ssh ${VM_ADMIN_USER}@${PERSIST_IP} sudo caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile"
 ok "Caddyfile validated; units installed (services are deployed by later phases)."
 
 # ---------- Secrets -> root-owned 0600 systemd EnvironmentFile ----------

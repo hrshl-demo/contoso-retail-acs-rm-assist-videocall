@@ -5,11 +5,13 @@
 #
 # Creates the Ubuntu VM, associates the PERSISTENT static IP, and manages the Let's Encrypt
 # certificate with a "mint once, reuse forever" policy:
-#   • If infra/cert/caddy-data.tgz (committed) exists  -> PRE-SEED it onto the VM and start
-#     Caddy, which serves the existing cert WITHOUT any Let's Encrypt call.
+#   • If an ENCRYPTED cert is stored in infra/cert/ for THIS host -> decrypt it to a temp
+#     file, PRE-SEED it onto the VM, shred the plaintext, and start Caddy, which serves the
+#     existing cert WITHOUT any Let's Encrypt call.
 #   • Otherwise (very first build)                     -> start Caddy, let it obtain the cert
-#     via HTTP-01, then EXPORT the cert store back to infra/cert/ and write CERT_FROZEN so the
-#     next build (and everyone who pulls the repo) reuses it.
+#     via HTTP-01, then export it, encrypt it into infra/cert/ via tools/cert_store.sh and
+#     write .cert-lock.json so the next build (and everyone who pulls the repo) reuses it.
+#     The private key is never written to a git-tracked path in the clear.
 # Finally it grants the VM's system-assigned managed identity keyless access to the gpt-5.4
 # Foundry account, so generation on the VM needs no key.
 set -euo pipefail
@@ -278,10 +280,22 @@ vm_ssh "sudo chmod 0600 ${VM_ENV_FILE} && sudo chown root:root ${VM_ENV_FILE}"
 shred -u "$ENV_FILE_LOCAL" 2>/dev/null || rm -f "$ENV_FILE_LOCAL"
 ok "Secrets installed at ${VM_ENV_FILE} (root:root 0600); local copy shredded."
 
-# ---------- Certificate: pre-seed committed cert, else mint once and export ----------
-CERT_TGZ="$REPO_ROOT/$CERT_DIR/caddy-data.tgz"
-CERT_FROZEN_FILE="$REPO_ROOT/$CERT_FROZEN_SENTINEL"
+# ---------- Certificate: pre-seed the stored cert, else mint once and store it ----------
+# The cert bundle is kept ENCRYPTED in the repo (tools/cert_store.sh). The plaintext tarball
+# only ever exists as a temp file here and is shredded on the way out, so the private key is
+# never written to a git-tracked path in the clear.
+CERT_PLAIN_TGZ="$SCRIPT_DIR/.caddy-data.tgz"     # transient, git-ignored, shredded below
+CERT_STORE="$REPO_ROOT/tools/cert_store.sh"
 CADDY_DATA_PARENT="/var/lib/caddy/.local/share"
+# cert_store.sh runs as a SEPARATE bash process, so it only sees exported variables. It
+# records these into .cert-lock.json; without the exports the lock would say "unknown" and
+# the stale-host check on the next build would silently stop working.
+export PERSIST_IP ACME_CA RMASSIST_HOST LETSENCRYPT_STAGING
+
+_shred_plain_cert() { [[ -f "$CERT_PLAIN_TGZ" ]] && { shred -u "$CERT_PLAIN_TGZ" 2>/dev/null || rm -f "$CERT_PLAIN_TGZ"; }; return 0; }
+# Shred on ANY exit path, including a die() between decrypt and cleanup — otherwise a failed
+# build could leave the decrypted private key sitting in the working tree.
+trap _shred_plain_cert EXIT
 
 _start_caddy() {
   vm_ssh 'sudo systemctl enable caddy >/dev/null 2>&1 || true; sudo systemctl restart caddy' \
@@ -300,29 +314,33 @@ _verify_tls() {
   return 1
 }
 
-if [[ -f "$CERT_TGZ" && -f "$CERT_FROZEN_FILE" ]]; then
-  # Reuse path — NO Let's Encrypt call.
-  FROZEN_HOST="$(grep -E '^CERT_HOST=' "$CERT_FROZEN_FILE" 2>/dev/null | cut -d'"' -f2 || true)"
-  if [[ -n "$FROZEN_HOST" && "$FROZEN_HOST" != "$RMASSIST_HOST" ]]; then
-    warn "Committed cert host ($FROZEN_HOST) != current host ($RMASSIST_HOST) — the static IP changed."
-    warn "Ignoring the stale committed cert; Caddy will mint a fresh one and it will be re-exported."
+if bash "$CERT_STORE" status >/dev/null 2>&1; then
+  # A cert is stored. Check it was minted for THIS host before trusting it.
+  STORED_HOST="$(bash "$CERT_STORE" lock-field fqdn 2>/dev/null || true)"
+  if [[ -n "$STORED_HOST" && "$STORED_HOST" != "$RMASSIST_HOST" ]]; then
+    warn "Stored cert host ($STORED_HOST) != current host ($RMASSIST_HOST) — the static IP changed."
+    warn "Ignoring the stale cert; Caddy will mint a fresh one and it will be re-stored."
     MINT_FRESH=1
-  else
-    log "Pre-seeding the committed Let's Encrypt cert onto the VM (no ACME call) ..."
+  elif bash "$CERT_STORE" restore "$CERT_PLAIN_TGZ"; then
+    log "Pre-seeding the stored Let's Encrypt cert onto the VM (no ACME call) ..."
     vm_ssh "sudo mkdir -p ${CADDY_DATA_PARENT}"
-    vm_pipe_in "$CERT_TGZ" "sudo tar -C ${CADDY_DATA_PARENT} -xzf - && sudo chown -R caddy:caddy ${CADDY_DATA_PARENT}/caddy" \
-      || die "Failed to pre-seed the committed cert store onto the VM."
+    vm_pipe_in "$CERT_PLAIN_TGZ" "sudo tar -C ${CADDY_DATA_PARENT} -xzf - && sudo chown -R caddy:caddy ${CADDY_DATA_PARENT}/caddy" \
+      || die "Failed to pre-seed the stored cert onto the VM."
+    _shred_plain_cert
     _start_caddy
     if _verify_tls; then
-      ok "TLS verified with the REUSED committed certificate — no Let's Encrypt call made."
+      ok "TLS verified with the REUSED stored certificate — no Let's Encrypt call made."
       MINT_FRESH=0
     else
       warn "Serving the reused cert did not verify; falling back to minting a fresh cert."
       MINT_FRESH=1
     fi
+  else
+    warn "Could not decrypt the stored cert — minting a fresh one."
+    MINT_FRESH=1
   fi
 else
-  log "No committed cert found — this is the first build; Caddy will mint one via Let's Encrypt HTTP-01."
+  log "No stored cert — this is the first build; Caddy will mint one via Let's Encrypt HTTP-01."
   MINT_FRESH=1
 fi
 
@@ -338,22 +356,18 @@ if [[ "${MINT_FRESH:-0}" == "1" ]]; then
     die "Certificate issuance/verification failed on the first build."
   fi
   ok "Certificate obtained and TLS verified."
-  log "Exporting the Caddy cert store back to the repo ($CERT_DIR/caddy-data.tgz) for reuse ..."
+  log "Exporting the Caddy cert store from the VM and encrypting it into $CERT_DIR/ ..."
   mkdir -p "$REPO_ROOT/$CERT_DIR"
-  vm_pipe_out "$CERT_TGZ" "sudo tar -C ${CADDY_DATA_PARENT} -czf - caddy" \
+  vm_pipe_out "$CERT_PLAIN_TGZ" "sudo tar -C ${CADDY_DATA_PARENT} -czf - caddy" \
     || die "Failed to export the cert store from the VM."
-  cat > "$CERT_FROZEN_FILE" <<EOF
-# Contoso Bank RM Assist — frozen Let's Encrypt certificate store.
-# Written by infra/phase10-vmhost/up.sh. COMMIT this file AND caddy-data.tgz: their presence
-# makes every future build REUSE this certificate instead of calling Let's Encrypt again
-# (which avoids the LE rate limits). Regenerate only by deleting both files.
-CERT_FROZEN_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-CERT_HOST="$RMASSIST_HOST"
-CERT_STATIC_IP="$PERSIST_IP"
-CERT_ACME_CA="$ACME_CA"
-CERT_STAGING="$LETSENCRYPT_STAGING"
-EOF
-  ok "Cert exported + frozen. Commit infra/cert/ so it is reused forever (build.sh auto-commits it)."
+  # --force: we just minted a NEW cert, so it must replace whatever was stored (this branch is
+  # also reached when a stale cert for a previous host was rejected above).
+  # RMASSIST_HOST / PERSIST_IP / ACME_CA / LETSENCRYPT_STAGING are already exported, and
+  # cert_store.sh records them into .cert-lock.json — which is what replaced CERT_FROZEN.
+  bash "$CERT_STORE" publish "$CERT_PLAIN_TGZ" --force \
+    || die "Failed to encrypt + store the cert into $CERT_DIR/."
+  _shred_plain_cert
+  ok "Cert encrypted + stored in $CERT_DIR/. Commit it so it is reused forever (build.sh auto-commits)."
 fi
 
 # ---------- Grant the VM MSI keyless access to the gpt-5.4 Foundry account ----------

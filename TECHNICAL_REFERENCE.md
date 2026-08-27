@@ -471,7 +471,7 @@ Defined centrally in `infra/common/env.sh` (overridable via real env vars). High
 `AOAI_CHAT_MODEL_NAME=gpt-5.4`, `AOAI_CHAT_DEPLOYMENT_NAME=gpt-5-4`, `AOAI_CHAT_SKU_NAME=GlobalStandard`; Foundry region `AZ_REGION_AOAI` (defaults to `AZ_REGION`); embeddings `text-embedding-3-small`; `VOICELIVE_MODEL=gpt-4.1`. (A build-time preflight verifies `gpt-5.4 GlobalStandard` is deployable in `AZ_REGION_AOAI`.)
 
 **Persistent layer / VM / cert (RM Assist pillars)**
-`AZ_RG_PERSISTENT=rg-contoso-rmx-persistent`, `NAME_PERSIST_PIP`, `NAME_VM=vm-rmx-host`, `VM_SIZE`, `VM_ADMIN_USER`, `RMASSIST_HOST_LABEL=rmassist` + `NIP_IO_SUFFIX=nip.io` (→ `rmassist.<ip>.nip.io`), `LETSENCRYPT_EMAIL`, `LETSENCRYPT_STAGING`, `CERT_DIR=infra/cert`. See `infra/common/env.sh` §5b. Build knobs: `SKIP_VMHOST`, `SKIP_DATAGEN`, `REGENERATE_DATA`, `COMMIT_ARTIFACTS`.
+`AZ_RG_PERSISTENT=rg-contoso-rmx-persistent`, `NAME_PERSIST_PIP`, `NAME_VM=vm-rmx-host`, `VM_SIZE`, `VM_ADMIN_USER`, `RMASSIST_HOST_LABEL=rmassist` + `NIP_IO_SUFFIX=nip.io` (→ `rmassist.<ip>.nip.io`), `LETSENCRYPT_EMAIL`, `LETSENCRYPT_STAGING`, `CERT_DIR=infra/cert` (+ `CERT_ENC_FILE`, `CERT_KEY_FILE`, `CERT_LOCK_FILE` — the cert store is committed **encrypted**; see `tools/cert_store.sh` and `infra/cert/README.md`). See `infra/common/env.sh` §5b. Build knobs: `SKIP_VMHOST`, `SKIP_DATAGEN`, `REGENERATE_DATA`, `COMMIT_ARTIFACTS`.
 
 **AI / voice runtime (consumed by videoassist + backend)**
 `AZURE_AI_ENDPOINT`, `AZURE_AI_SCOPE=https://ai.azure.com/.default`, `VOICE_AI_CHAT_DEPLOYMENT`, `VOICE_AI_FAST_DEPLOYMENT`, `VOICE_AI_WARMUP=1`, `AZURE_SPEECH_REGION`, `AZURE_SPEECH_RESOURCE_ID`, `ACS_DATA_LOCATION=India`.

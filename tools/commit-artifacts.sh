@@ -9,7 +9,9 @@
 #   data/contosobank/            deterministic dataset + gpt-5.4 enrichment (contosobank_dataset.json)
 #   data/contosobank/BASELINE_FROZEN   the freeze sentinel (makes future builds skip generation)
 #   docs/sop/contosobank_*.md    gpt-5.4-authored SOP corpus (the curated 01..20 SOPs are untouched)
-#   infra/cert/                  the committed Let's Encrypt cert + CERT_FROZEN (minted once, reused)
+#   infra/cert/                  the ENCRYPTED Let's Encrypt cert store (minted once, reused):
+#                                caddy-data.tgz.enc + cert-enc.key + .cert-lock.json.
+#                                The plaintext tarball is git-ignored and never staged.
 #
 # Safe + idempotent: if nothing changed it is a clean no-op. Disable pushing with GIT_PUSH=0
 # (commit only). Override the branch with GIT_PUSH_BRANCH.

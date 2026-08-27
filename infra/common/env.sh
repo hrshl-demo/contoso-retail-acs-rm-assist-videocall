@@ -287,10 +287,21 @@ export LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-rmassist-demo@example.com}"
 # Set LETSENCRYPT_STAGING=1 to mint from LE's staging CA (untrusted, but no rate limits) while
 # testing the flow; the default (0) uses the production CA so the committed cert is real.
 export LETSENCRYPT_STAGING="${LETSENCRYPT_STAGING:-0}"
-# Where the committed cert + ACME account live in the repo, and the freeze sentinel that makes
-# every later build REUSE them instead of calling Let's Encrypt again.
+# Where the reusable cert lives in the repo. The Caddy data dir (ACME account + issued cert
+# + PRIVATE KEY) is tarred, AES-256 encrypted by tools/cert_store.sh and committed, so every
+# later build decrypts + pre-seeds it instead of calling Let's Encrypt again.
+#
+# The AES key is committed alongside the ciphertext as cert-enc.key. That makes this
+# OBFUSCATION, NOT SECURITY: anyone with repo access can decrypt it. It exists so GitHub
+# secret scanning does not flag the blob and so the key is not casually greppable. The real
+# boundary is the repo staying PRIVATE. See infra/cert/README.md.
 export CERT_DIR="${CERT_DIR:-infra/cert}"
-export CERT_FROZEN_SENTINEL="${CERT_FROZEN_SENTINEL:-infra/cert/CERT_FROZEN}"
+export CERT_ENC_FILE="${CERT_ENC_FILE:-$CERT_DIR/caddy-data.tgz.enc}"
+export CERT_KEY_FILE="${CERT_KEY_FILE:-$CERT_DIR/cert-enc.key}"
+# .cert-lock.json REPLACES the old CERT_FROZEN sentinel: it records cipher/sha256/fqdn/
+# static_ip/acme_ca/timestamp, so a single file answers "is a cert stored, and which host
+# is it for" rather than two files that can drift out of agreement.
+export CERT_LOCK_FILE="${CERT_LOCK_FILE:-$CERT_DIR/.cert-lock.json}"
 
 # =====================================================================================
 # 6) VIDEO ASSIST — AI + Speech + ACS  (derived from the created Foundry account)

@@ -35,4 +35,4 @@ else
   warn "Persistent RG delete reported an error — check the portal."
 fi
 rm -f "$SCRIPT_DIR/outputs.env" 2>/dev/null || true
-ok "Persistent teardown complete. The committed cert in $CERT_DIR is now stale; delete it + $CERT_FROZEN_SENTINEL to re-mint on the next build."
+ok "Persistent teardown complete. The stored cert in $CERT_DIR is now stale; delete $CERT_ENC_FILE + $CERT_LOCK_FILE to re-mint on the next build."

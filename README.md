@@ -83,12 +83,14 @@ of the dataset + SOP corpus. The Foundry account lives in `AZ_REGION_AOAI` (defa
 override if `gpt-5.4 GlobalStandard` isn't offered in your region — a build-time capability preflight
 fails fast with guidance). Config: `infra/common/env.sh` §4.
 
-**2. VM + Caddy + Let's Encrypt, minted once and committed.** A never-wiped **persistent RG**
+**2. VM + Caddy + Let's Encrypt, minted once and committed (encrypted).** A never-wiped **persistent RG**
 (`build_persistent.sh`, run once ever) holds a **static public IP** that anchors the stable host
 `rmassist.<ip>.nip.io`. A billable Ubuntu **VM** (phase 10) borrows that IP and runs **Caddy**, which
-obtains a Let's Encrypt cert via HTTP-01 on the **first build only**; the cert store is then exported to
-**`infra/cert/`** and committed. Every later build **pre-seeds the committed cert** so it is reused with
-**no ACME call** (avoiding rate limits). The persistent RG + cert survive every wipe.
+obtains a Let's Encrypt cert via HTTP-01 on the **first build only**; the cert store is then **AES-256
+encrypted** by `tools/cert_store.sh` into **`infra/cert/`** and committed. Every later build **decrypts and
+pre-seeds** it so it is reused with **no ACME call** (avoiding rate limits). The persistent RG + cert
+survive every wipe. Note the AES key is committed beside the ciphertext, so this is **obfuscation, not
+security** — see `infra/cert/README.md`; the repo must stay private.
 
 **3. Datasets + SOPs generated on the VM, auto-committed; full-purge wipe.** The dataset
 (`data/contosobank/`) and SOP corpus (`docs/sop/contosobank_*.md`) are generated **on the VM** using the

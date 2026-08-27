@@ -35,13 +35,19 @@ infra/phase10-vmhost/.Caddyfile.rendered
 infra/phase10-vmhost/.rmx-*.service.rendered
 infra/phase10-vmhost/.rmx.env.rendered
 
-# --- Committed cert (infra/cert/) IS tracked on purpose -------------------------------------
-# The reusable Let's Encrypt cert store (caddy-data.tgz, .tgz — NOT matched by *.tar.gz above)
-# and CERT_FROZEN are committed so every build reuses the cert with no ACME call. Force-keep
-# them even if a broad *.tgz rule is added later.
+# --- Reusable TLS cert (infra/cert/) IS tracked on purpose ----------------------------------
+# The Caddy cert store is committed ENCRYPTED (see tools/cert_store.sh + infra/cert/README.md)
+# so every build reuses it with no ACME call. Three artifacts must be tracked: the ciphertext,
+# the AES key committed beside it, and the lock file. Force-keep them against broader rules.
 !infra/cert/
-!infra/cert/caddy-data.tgz
-!infra/cert/CERT_FROZEN
+!infra/cert/caddy-data.tgz.enc
+!infra/cert/cert-enc.key
+!infra/cert/.cert-lock.json
+# The PLAINTEXT tarball must NEVER be committed — it contains the TLS private key in the
+# clear. up.sh only ever writes it as a transient temp file and shreds it, but this rule is
+# what guarantees a stray one cannot be added even with `git add -A`.
+infra/cert/caddy-data.tgz
+infra/phase10-vmhost/.caddy-data.tgz
 
 # OS junk
 .DS_Store

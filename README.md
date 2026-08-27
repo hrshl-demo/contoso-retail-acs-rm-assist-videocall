@@ -338,8 +338,6 @@ safe fallback (set the env var to disable and you get the old behavior exactly):
 
 | Tunable | Default | What it does |
 |---------|---------|--------------|
-| `PREBUILD_IMAGES` | `1` | Builds the three container images (Tool API, Video Assist, CRM dashboard) **concurrently in the background** right after phase1, so they finish *while* phase2 provisions AI Search (the ~10-min long pole). Phases 4/6/9 then reuse the ready images instead of building serially across later waves. If any pre-build fails, that phase falls back to building inline. Set `0` to build inline as before. |
-| `PHASE5_REBUILD_TOOLAPI` | `0` | Skips phase5's Tool API image rebuild — phase4's image already contains `rag.py`/`search.py` and RAG is read from AI Search at runtime, so no redeploy is needed just to "enable RAG". Set `1` to force a rebuild+redeploy (e.g. if you changed backend code between phase4 and phase5). |
 | `WIPE_PARALLEL_DELETES` | `1` | Tears down independent resources **concurrently**: phase1 deletes Log Analytics and the UAMI in parallel, and phase2 deletes AI Search in parallel with ACS/Email. (This mattered far more when phase1 also had a ~15-minute Container Apps Environment delete to overlap; that resource is gone, so the win is now modest.) All tag assertions still run up-front *before* any delete, so teardown safety is unchanged. Set `0` for sequential deletes. |
 
 Net effect: deploy ≈ **18–20 min** (was ~30) by overlapping ~10–12 min of image builds under phase2 and
@@ -463,11 +461,9 @@ only the SKU/name/capacity differ. The embedding deployment is always created to
 ### 8b) Performance / speed + build/teardown tunables
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `BUILD_STAGE` | `all` | `all` (deploy.sh) run every phase · `foundation` (build_rg.sh) phase0+phase1 only · `apps` (build.sh) phase2..phase9 only |
-| `PREBUILD_IMAGES` | `1` | `1` build container images in parallel (overlaps phase2) · `0` build inline per phase |
-| `PHASE5_REBUILD_TOOLAPI` | `0` | `0` skip redundant phase5 Tool API rebuild · `1` force rebuild+redeploy |
+| `BUILD_STAGE` | `all` | `all` (deploy.sh) run every phase · `foundation` (build_rg.sh) phase0+phase1 only · `apps` (build.sh) the billable phases only. `build.sh` self-heals: if the foundation is absent it widens to `all` rather than failing. |
 | `WIPE_PARALLEL_DELETES` | `1` | `1` parallel per-resource deletes (per-phase teardown) · `0` sequential |
-| `WIPE_DELETE_RG` | `0` in `wipe.sh` | `wipe.sh` defaults to `0` (keep the RG); `--delete-rg` or `WIPE_DELETE_RG=1` deletes the whole RG. `deploy.sh` is unaffected. |
+| `WIPE_DELETE_RG` | `1` in `wipe.sh` | `wipe.sh` now defaults to `1` — a FULL PURGE of the whole billable RG. Pass `--keep-rg` (or `WIPE_DELETE_RG=0`) for the older per-phase teardown that leaves the RG standing. The persistent RG holding the static IP is never touched either way. |
 | `KEEP_PLATFORM` | `1` in `wipe.sh` | `1` keep the Phase-1 platform when keeping the RG (fast next `build.sh`) · `0` also tear it down |
 | `WIPE_RG_NOWAIT` | `0` | `1` submit the RG delete async and return (skips soft-delete purges) |
 | `WIPE_PURGE_SOFT_DELETED` | `1` | `1` purge soft-deleted CogSvc accounts after RG delete · `0` skip |

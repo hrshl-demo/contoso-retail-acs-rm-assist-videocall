@@ -31,6 +31,9 @@ param vnetName string = 'vnet-rmx-host'
 @description('VM size.')
 param vmSize string = 'Standard_D4as_v5'
 
+@description('Resource ID of the SHARED platform user-assigned managed identity (phase1). Attached to the VM so the app services inherit the Foundry/Search/ACS role assignments phase2 already granted to it.')
+param uamiResourceId string
+
 @description('Admin username for SSH.')
 param adminUsername string = 'azureuser'
 
@@ -143,7 +146,23 @@ resource vm 'Microsoft.Compute/virtualMachines@2023-09-01' = {
   location: location
   tags: commonTags
   identity: {
-    type: 'SystemAssigned'   // keyless access to gpt-5.4 (granted Cognitive Services roles in up.sh).
+    // BOTH identities are attached, deliberately:
+    //   SystemAssigned — the VM's own identity, granted Cognitive Services roles by up.sh
+    //                    for keyless gpt-5.4 dataset/SOP generation.
+    //   UserAssigned   — the SHARED platform UAMI from phase1. Every phase2-ai role
+    //                    assignment (Foundry, AI Search, ACS) is keyed to uamiPrincipalId,
+    //                    and phase2 runs BEFORE this VM exists — so re-keying those grants
+    //                    to a VM principal would be circular. Attaching the existing UAMI
+    //                    instead keeps all of phase2 unchanged and lets the app services
+    //                    reuse exactly the permissions they had as Container Apps.
+    //
+    // With two identities present, DefaultAzureCredential cannot guess which to use: the
+    // app units set AZURE_CLIENT_ID to the UAMI's client id (the same thing phase9 did for
+    // the Container App), which pins ManagedIdentityCredential to the UAMI.
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${uamiResourceId}': {}
+    }
   }
   properties: {
     hardwareProfile: { vmSize: vmSize }

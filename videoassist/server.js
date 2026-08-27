@@ -25,6 +25,11 @@ app.use((req, res, next) => {
   next();
 });
 const port = process.env.PORT || 3000;
+// Bind address. On the VM this is 127.0.0.1 so Caddy is the ONLY public ingress and the
+// Node process is unreachable from the internet regardless of NSG rules. Unset (all
+// interfaces) preserves the previous container behaviour, where the platform did the
+// isolation.
+const host = process.env.HOST || undefined;
 
 const connectionString = process.env.ACS_CONNECTION_STRING;
 let identityClient;
@@ -914,4 +919,5 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(distDir, 'index.html'));
 });
 
-app.listen(port, () => console.log(`Video Assist (MSME merge) listening on :${port} â€” AI ${aiReady() ? 'ready' : 'OFF'}, grounding ${groundingReady() ? 'Tool API' : 'OFF'}`));
+const _listenArgs = host ? [port, host] : [port];
+app.listen(..._listenArgs, () => console.log(`Video Assist listening on ${host || '0.0.0.0'}:${port} — AI ${aiReady() ? 'ready' : 'OFF'}, grounding ${groundingReady() ? 'Tool API' : 'OFF'}`));

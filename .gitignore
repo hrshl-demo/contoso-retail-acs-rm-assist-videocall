@@ -29,6 +29,11 @@ __pycache__/
 **/rmx_vm_host.pub
 .ssh/rmx_vm_host*
 infra/phase10-vmhost/.cloud-init.rendered.yaml
+# Rendered Caddyfile / systemd units / EnvironmentFile. The TEMPLATES are committed; the
+# rendered output is not — it is host-specific and .rmx.env.rendered briefly holds SECRETS.
+infra/phase10-vmhost/.Caddyfile.rendered
+infra/phase10-vmhost/.rmx-*.service.rendered
+infra/phase10-vmhost/.rmx.env.rendered
 
 # --- Committed cert (infra/cert/) IS tracked on purpose -------------------------------------
 # The reusable Let's Encrypt cert store (caddy-data.tgz, .tgz — NOT matched by *.tar.gz above)

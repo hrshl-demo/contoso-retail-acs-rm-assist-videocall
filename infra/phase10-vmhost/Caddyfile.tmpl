@@ -1,0 +1,143 @@
+# =====================================================================================
+# infra/phase10-vmhost/Caddyfile.tmpl
+#
+# Rendered to /etc/caddy/Caddyfile by infra/phase10-vmhost/up.sh (sed token substitution).
+# Caddy is the SOLE public ingress: it terminates TLS on :443 and reverse-proxies to
+# application processes that bind 127.0.0.1 only. Nothing else on the VM is reachable from
+# the internet (the NSG opens TCP 22/80/443 and nothing more).
+#
+# Tokens substituted at deploy time:
+#   __RMASSIST_HOST__      stable host, e.g. rmassist.4.5.6.7.nip.io
+#   __LETSENCRYPT_EMAIL__  ACME registration email
+#   __ACME_CA__            ACME directory URL (production or staging)
+#   __TOOLAPI_BIND__       e.g. 127.0.0.1:8000   (uvicorn / FastAPI, rmx-toolapi.service)
+#   __VIDEOASSIST_BIND__   e.g. 127.0.0.1:3000   (node server.js, rmx-videoassist.service)
+#
+# ROUTING — one hostname, path prefixes, so ONE cert and ONE ACME order cover everything:
+#   /             -> file_server over /opt/rmx/web   (CRM cockpit, pure static)
+#   /api/*        -> __TOOLAPI_BIND__                (prefix STRIPPED)
+#   /video/*      -> __VIDEOASSIST_BIND__            (prefix STRIPPED)
+#
+# WHY `handle @name` + `uri strip_prefix` RATHER THAN `handle_path`:
+# `handle_path X` is by definition `handle X` + `uri strip_prefix X`, so the stripping
+# behaviour here is identical. The explicit form is used because the SSE route below MUST
+# be a separate block, and a named matcher (`@sse`) can only be DEFINED at site-block level
+# — Caddy rejects `@name` definitions inside `route`/`handle` blocks with a syntax error.
+# Since /video therefore needs a site-level matcher anyway, every branch uses the same
+# directive type: all four are `handle` blocks, so "first match wins, in source order" is
+# unambiguous and does not depend on how Caddy co-orders `handle` against `handle_path`.
+#
+# Each app keeps serving from its OWN root after stripping (/healthz, /token, /session/start
+# …), so no internal route rewrites are needed in either application.
+#
+# NOTE: Caddy does not probe upstream liveness at startup, so this config loads cleanly
+# before rmx-toolapi/rmx-videoassist exist. That is required: up.sh installs this file and
+# starts Caddy FIRST to pre-seed (or mint) the certificate, and only later phases deploy the
+# app services. Until then /api and /video return 502 while / and ACME work normally.
+# =====================================================================================
+{
+	email __LETSENCRYPT_EMAIL__
+	acme_ca __ACME_CA__
+	admin off
+
+	# --- HTTP/1.1 and HTTP/2 only; NO HTTP/3 -----------------------------------------
+	# Caddy enables HTTP/3 by default and advertises it via `Alt-Svc: h3=":443"`, which a
+	# browser caches and then prefers on later visits. HTTP/3 is QUIC over **UDP** 443, but
+	# this deployment's NSG opens **TCP** 443 only (see main.bicep securityRules), and
+	# corporate networks frequently block outbound UDP 443 too. Dropped UDP produces no
+	# rejection, so the browser just waits and the viewer sees ERR_CONNECTION_TIMED_OUT on a
+	# site that is answering perfectly over TCP — a failure `curl` never reproduces, because
+	# curl does not speak HTTP/3. Removing the advertisement is the fix.
+	servers {
+		protocols h1 h2
+	}
+}
+
+__RMASSIST_HOST__ {
+	# --- Matchers (site-block level: Caddy does not allow @name inside handle/route) ---
+	@sse path /video/insights/stream*
+	@video path /video/*
+	@api path /api/*
+	# A bare /video or /api does NOT match /video/* — without these the SPA fallback below
+	# would swallow them and serve the CRM cockpit, which looks like a routing bug.
+	@videoRoot path /video
+	@apiRoot path /api
+
+	# --- Bare-prefix redirects -------------------------------------------------------
+	# `redir` runs BEFORE the handle group in Caddy's directive order, and taking a NAMED
+	# matcher makes the argument parse unambiguous. That matters: the obvious-looking
+	# `handle @videoRoot { redir /video/ 308 }` is a TRAP — in the matcher position Caddy
+	# reads a leading-slash token as an INLINE PATH MATCHER, so it parses as
+	# matcher=/video/, destination=308, and emits `Location: 308` with status 302.
+	# That mis-parse was observed in Caddy's own adapted JSON config; the named-matcher
+	# form below adapts to the intended static_response status_code 308, Location /video/.
+	redir @videoRoot /video/ 308
+	redir @apiRoot /api/ 308
+
+	# --- Server-Sent Events: live nudges pushed to the CRM cockpit --------------------
+	# MUST come first. The cockpit holds /video/insights/stream open for the duration of the
+	# call. Compression and proxy response buffering would hold events back, so this branch
+	# gets NO `encode` and `flush_interval -1` to disable buffering — each nudge reaches the
+	# browser the instant nudge-engine emits it, which is the whole point of the demo.
+	handle @sse {
+		uri strip_prefix /video
+		reverse_proxy __VIDEOASSIST_BIND__ {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+			flush_interval -1
+		}
+	}
+
+	# --- Tool API (FastAPI/uvicorn) ---------------------------------------------------
+	# Strips "/api", so the app sees /healthz, /crm/propose, ... exactly as it does today.
+	handle @api {
+		uri strip_prefix /api
+		encode zstd gzip
+		reverse_proxy __TOOLAPI_BIND__ {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# --- Video Assist (Node/Express + built Vite SPA) ---------------------------------
+	# Strips "/video", so Express still resolves /token, /speech/token, /session/start,
+	# /bank, /schedule and its SPA fallback from its own root. `reverse_proxy` transparently
+	# upgrades WebSockets, which the ACS calling SDK needs.
+	handle @video {
+		uri strip_prefix /video
+		encode zstd gzip
+		reverse_proxy __VIDEOASSIST_BIND__ {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# --- CRM cockpit (static files, served straight off disk — no nginx needed) -------
+	handle {
+		encode zstd gzip
+		root * /opt/rmx/web
+		try_files {path} {path}/ /index.html
+		file_server
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		# Nothing is framed today: the cockpit opens the call, the booking page and the
+		# customer mobile page with window.open(..., '_blank') — new tabs, not iframes —
+		# so DENY would also work right now. SAMEORIGIN is chosen because all three apps
+		# are now a single origin, which leaves room for a same-origin embed later without
+		# weakening protection against framing by any OTHER origin.
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+		format console
+	}
+}

@@ -7,10 +7,20 @@
 #   __LETSENCRYPT_EMAIL__  ACME registration email
 #   __ACME_CA__            the ACME directory URL (production or staging)
 #   __ADMIN_USER__         the VM admin user (owns the generation workspace)
+#   __APP_USER__           the unprivileged service account the app units run as
 #
-# It installs Caddy + Python + the keyless Azure OpenAI client deps, writes the Caddyfile, and
-# then STOPS + DISABLES Caddy so up.sh can pre-seed the committed certificate BEFORE Caddy ever
-# starts (which is what prevents an unwanted Let's Encrypt HTTP-01 call on a reused cert).
+# It provisions the RUNTIME for the three workloads that used to be Container Apps:
+#   * Caddy            sole public ingress, TLS on :443
+#   * Python 3 + venv  Tool API (FastAPI/uvicorn) under systemd
+#   * Node.js 20       Video Assist (Express + built Vite SPA) under systemd
+# and then STOPS + DISABLES Caddy so up.sh can pre-seed the committed certificate BEFORE
+# Caddy ever starts (which is what prevents an unwanted Let's Encrypt HTTP-01 call on a
+# reused cert). THAT STOP+DISABLE IS LOAD-BEARING FOR CERT REUSE — do not remove it.
+#
+# NOTE: the real /etc/caddy/Caddyfile is rendered from Caddyfile.tmpl and pushed by up.sh.
+# The placeholder written here exists only so the caddy package has a valid config on disk
+# if the build is interrupted before up.sh pushes the real one. Caddy stays disabled until
+# up.sh acts, so this placeholder never actually serves traffic.
 
 package_update: true
 package_upgrade: false
@@ -19,6 +29,7 @@ packages:
   - debian-keyring
   - debian-archive-keyring
   - apt-transport-https
+  - ca-certificates
   - curl
   - gnupg
   - python3
@@ -32,9 +43,14 @@ write_files:
   - path: /etc/caddy/Caddyfile
     permissions: '0644'
     content: |
+      # PLACEHOLDER — replaced by up.sh with the rendered Caddyfile.tmpl.
       {
           email __LETSENCRYPT_EMAIL__
           acme_ca __ACME_CA__
+          admin off
+          servers {
+              protocols h1 h2
+          }
       }
       __RMASSIST_HOST__ {
           encode gzip
@@ -49,16 +65,20 @@ write_files:
       <title>Contoso Bank RM Assist</title>
       <body style="font-family:system-ui;margin:60px">
       <h2>Contoso Bank RM Assist — TLS OK</h2>
-      <p>Caddy + Let's Encrypt is serving. The Core Banking &amp; CRM console is deployed here by
-      <code>tools/deploy-console-on-vm.sh</code> during the build.</p>
+      <p>Caddy + Let's Encrypt is serving. The RM Assist cockpit is deployed here during the build.</p>
       </body>
 
   - path: /opt/rmx/README.txt
     permissions: '0644'
     content: |
-      Contoso Bank RM Assist — data-generation + Caddy host.
-      Generation workspace is synced here over SSH by tools/run-generation-on-vm.sh.
-      gpt-5.4 access is keyless via this VM's system-assigned managed identity.
+      Contoso Bank RM Assist — application host.
+        /opt/rmx/web           CRM cockpit (static, served directly by Caddy at /)
+        /opt/rmx/toolapi       FastAPI Tool API   -> 127.0.0.1:8000, Caddy /api/*
+        /opt/rmx/videoassist   ACS Video Assist   -> 127.0.0.1:3000, Caddy /video/*
+        /opt/rmx/workspace     dataset/SOP generation workspace (SSH sync target)
+        /opt/rmx/etc/rmx.env   root-owned 0600 secrets (systemd EnvironmentFile)
+      Both app services bind LOOPBACK ONLY; Caddy is the sole public ingress.
+      gpt-5.4 access is keyless via this VM's managed identity.
 
 runcmd:
   # --- Caddy (official stable apt repo) ---
@@ -66,13 +86,25 @@ runcmd:
   - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
   - apt-get update
   - DEBIAN_FRONTEND=noninteractive apt-get install -y caddy
+  # --- Node.js 20 (NodeSource) for the Video Assist app ---
+  - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
   # Keyless Azure OpenAI client deps for the generation scripts (managed-identity via IMDS).
   - pip3 install --no-cache-dir --upgrade azure-identity openai
-  # Generation workspace owned by the admin user (SSH sync target).
-  - mkdir -p /opt/rmx/workspace
-  # Static webroot for the Core Banking & CRM console (populated by deploy-console-on-vm.sh).
-  - mkdir -p /opt/rmx/web/data
-  - chown -R __ADMIN_USER__:__ADMIN_USER__ /opt/rmx
+  # --- Unprivileged service account for the app units (no shell, no home) ---
+  - id -u __APP_USER__ >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin __APP_USER__
+  # --- Directory layout ---
+  - mkdir -p /opt/rmx/workspace /opt/rmx/web/data /opt/rmx/toolapi /opt/rmx/videoassist /opt/rmx/etc
+  # The admin user owns the generation workspace + webroot (rsync/SSH targets).
+  - chown -R __ADMIN_USER__:__ADMIN_USER__ /opt/rmx/workspace /opt/rmx/web
+  # The service account owns the two app trees it runs from.
+  - chown -R __APP_USER__:__APP_USER__ /opt/rmx/toolapi /opt/rmx/videoassist
+  # Secrets directory is root-only; the EnvironmentFile itself is written 0600 by up.sh.
+  - chown root:root /opt/rmx/etc
+  - chmod 0750 /opt/rmx/etc
+  # Caddy needs somewhere to write its access log.
+  - mkdir -p /var/log/caddy
+  - chown -R caddy:caddy /var/log/caddy
   # Hand cert-store control to up.sh: stop + disable Caddy so it does NOT mint a cert before
   # up.sh has had the chance to pre-seed the committed one.
   - systemctl stop caddy || true

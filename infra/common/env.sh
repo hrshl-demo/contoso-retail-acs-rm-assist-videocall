@@ -241,6 +241,42 @@ export VM_IMAGE="${VM_IMAGE:-Ubuntu2204}"
 export VM_SSH_KEY_DIR="${VM_SSH_KEY_DIR:-$HOME/.ssh}"
 export VM_SSH_KEY_NAME="${VM_SSH_KEY_NAME:-rmx_vm_host}"
 
+# --- VM application runtime (native systemd services behind Caddy) ---------------------
+# The three workloads that used to be Container Apps now run natively on this one VM:
+#   Caddy :80/:443   sole PUBLIC ingress, terminates TLS, path-routes to everything else
+#     /              file_server over $VM_WEB_DIR                (CRM cockpit, static)
+#     /api/*         reverse_proxy -> $TOOLAPI_BIND              (uvicorn, rmx-toolapi)
+#     /video/*       reverse_proxy -> $VIDEOASSIST_BIND          (node,    rmx-videoassist)
+# Both app services bind LOOPBACK ONLY. That is a hard security property, not a default:
+# the NSG opens 22/80/443, so anything bound to 0.0.0.0 on another port would be firewalled
+# but anything bound on 80/443 would not be. Loopback removes the question entirely and
+# makes Caddy the only way in — which is what the bearer-token and CORS model assumes.
+export VM_APP_USER="${VM_APP_USER:-rmxapp}"          # unprivileged service account (no shell)
+export VM_APP_ROOT="${VM_APP_ROOT:-/opt/rmx}"
+export VM_WEB_DIR="${VM_WEB_DIR:-$VM_APP_ROOT/web}"
+export VM_TOOLAPI_DIR="${VM_TOOLAPI_DIR:-$VM_APP_ROOT/toolapi}"
+export VM_VIDEOASSIST_DIR="${VM_VIDEOASSIST_DIR:-$VM_APP_ROOT/videoassist}"
+# Root-owned 0600 systemd EnvironmentFile. Secrets land HERE and nowhere else: not in the
+# unit files (world-readable), not on a command line (visible in /proc and in `ps`), and
+# never committed. Written by phase10-vmhost/up.sh from infra/common/secrets.env.
+export VM_ENV_FILE="${VM_ENV_FILE:-$VM_APP_ROOT/etc/rmx.env}"
+# Per-app EnvironmentFiles, written by that app's own deploy phase. systemd applies
+# EnvironmentFile lines in order and later ones win, so an app can override a shared default.
+export VM_TOOLAPI_ENV_FILE="${VM_TOOLAPI_ENV_FILE:-$VM_APP_ROOT/etc/toolapi.env}"
+export VM_VIDEOASSIST_ENV_FILE="${VM_VIDEOASSIST_ENV_FILE:-$VM_APP_ROOT/etc/videoassist.env}"
+export VM_NODE_BIN="${VM_NODE_BIN:-/usr/bin/node}"
+export TOOLAPI_HOST="${TOOLAPI_HOST:-127.0.0.1}"
+export TOOLAPI_PORT="${TOOLAPI_PORT:-8000}"
+export VIDEOASSIST_HOST="${VIDEOASSIST_HOST:-127.0.0.1}"
+export VIDEOASSIST_PORT="${VIDEOASSIST_PORT:-3000}"
+export TOOLAPI_BIND="${TOOLAPI_BIND:-$TOOLAPI_HOST:$TOOLAPI_PORT}"
+export VIDEOASSIST_BIND="${VIDEOASSIST_BIND:-$VIDEOASSIST_HOST:$VIDEOASSIST_PORT}"
+# Public path prefixes. Caddy `handle_path` STRIPS these before proxying, so each app still
+# serves from its own root ("/healthz", "/token", ...) and needs no internal route rewrites.
+# The browser-facing URLs are the prefixed ones, which is what gets injected into the CRM.
+export TOOLAPI_PATH_PREFIX="${TOOLAPI_PATH_PREFIX:-/api}"
+export VIDEOASSIST_PATH_PREFIX="${VIDEOASSIST_PATH_PREFIX:-/video}"
+
 # --- Let's Encrypt cert (obtained ONCE, committed under infra/cert/, reused forever) ----
 # The host label + derived FQDN. RMASSIST_HOST is computed at build time from the static IP
 # ($PERSIST_IP) once the persistent layer exists; export it yourself to override.

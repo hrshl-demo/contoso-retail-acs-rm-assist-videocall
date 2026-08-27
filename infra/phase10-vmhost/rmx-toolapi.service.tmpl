@@ -1,0 +1,59 @@
+# =====================================================================================
+# infra/phase10-vmhost/rmx-toolapi.service.tmpl
+#
+# Rendered to /etc/systemd/system/rmx-toolapi.service by infra/phase10-vmhost/up.sh
+# (sed token substitution). Runs the FastAPI Tool API under uvicorn as the unprivileged
+# service account.
+#
+# BINDS 127.0.0.1 ONLY. Caddy is the sole public ingress; this process must never be
+# reachable from the internet. The --host is explicit rather than relying on the NSG.
+#
+# Tokens:
+#   __APP_USER__        unprivileged service account
+#   __TOOLAPI_DIR__     /opt/rmx/toolapi (venv + backend/ + data/ live here)
+#   __TOOLAPI_HOST__    127.0.0.1
+#   __TOOLAPI_PORT__    8000
+#   __ENV_FILE__        root-owned 0600 EnvironmentFile holding the SHARED secrets
+#   __APP_ENV_FILE__    root-owned 0600 EnvironmentFile holding this app's own config
+#
+# Two EnvironmentFiles, deliberately: the shared one carries secrets used by more than one
+# service (and the managed-identity pin), the app one carries per-app config written by that
+# app's deploy phase. Later files win, so an app may override a shared default.
+# =====================================================================================
+[Unit]
+Description=Contoso RM Assist Tool API (FastAPI/uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__APP_USER__
+Group=__APP_USER__
+WorkingDirectory=__TOOLAPI_DIR__
+Environment=PYTHONUNBUFFERED=1
+Environment=DATA_DIR=__TOOLAPI_DIR__/data/csv
+Environment=KB_DIR=__TOOLAPI_DIR__/data/knowledge_base
+Environment=SOP_DIR=__TOOLAPI_DIR__/data/sop
+# `-` prefix: start even if the file is absent, so a secretless smoke deploy still boots.
+EnvironmentFile=-__ENV_FILE__
+EnvironmentFile=-__APP_ENV_FILE__
+ExecStart=__TOOLAPI_DIR__/venv/bin/uvicorn app.main:app \
+    --host __TOOLAPI_HOST__ \
+    --port __TOOLAPI_PORT__ \
+    --app-dir __TOOLAPI_DIR__/backend \
+    --workers 1 \
+    --no-access-log
+Restart=always
+RestartSec=3
+
+# --- hardening ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

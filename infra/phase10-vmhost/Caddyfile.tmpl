@@ -91,8 +91,12 @@ __RMASSIST_HOST__ {
 	# the live transcription or voice stream simply hangs with no error — the WebSocket
 	# handshake never completes.
 	# ONE-LINE FIX during a demo: in /etc/caddy/Caddyfile, delete the `encode` line from
-	# the affected handle block, then `sudo systemctl reload caddy`. Compression is a
+	# the affected handle block, then `sudo systemctl restart caddy`. Compression is a
 	# nice-to-have; the socket is not.
+	# USE restart, NOT reload: this config sets `admin off` above, and Caddy's reload path
+	# (both `caddy reload` and the packaged unit's ExecReload) drives the admin API on
+	# localhost:2019. With the API disabled a reload dies with "connection refused" — which
+	# mid-demo reads as "my edit broke Caddy" when the edit was in fact fine.
 	@notws not header Connection *Upgrade*
 
 	# --- Bare-prefix redirects -------------------------------------------------------

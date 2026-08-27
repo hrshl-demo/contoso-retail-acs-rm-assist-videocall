@@ -77,6 +77,9 @@ tar -C "$(dirname "$DATASET")" -czf - "$(basename "$DATASET")" \
 vm_ssh "chmod -R a+rX $WEB" || warn "Could not relax webroot permissions (Caddy may still read them)."
 
 # Make Caddy pick up the (unchanged) Caddyfile / new files. reload is a no-op-safe hot reload.
+# `admin off` in the Caddyfile means the reload path (which drives the admin API on
+# localhost:2019) always fails, so this is effectively a restart. The `||` chain is kept
+# so the line still does the right thing if the admin API is ever re-enabled.
 vm_ssh "sudo systemctl reload caddy 2>/dev/null || sudo systemctl restart caddy 2>/dev/null || true"
 
 URL="${RMASSIST_URL:-https://${RMASSIST_HOST:-$VM_HOST_IP}/}"

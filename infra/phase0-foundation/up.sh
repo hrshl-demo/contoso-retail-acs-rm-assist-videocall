@@ -26,10 +26,13 @@ done
 [[ $MISSING_NOW -eq 1 ]] && die "Install missing tools above before continuing."
 
 log "Ensuring az CLI extensions..."
-for ext in containerapp; do
+# The 'containerapp' extension is no longer needed: nothing is containerised. Add extensions
+# back to this loop if a future phase needs one.
+for ext in ; do
   if az extension show --name "$ext" >/dev/null 2>&1; then ok "Extension installed: $ext"
   else log "Installing extension: $ext"; az extension add --name "$ext" --only-show-errors; ok "Installed: $ext"; fi
 done
+ok "No extra az extensions required."
 
 log "Registering resource providers (idempotent)..."
 PROVIDERS=(
@@ -72,9 +75,7 @@ Project tag:                  $PROJECT_TAG
 
 Phase 1 (platform):
   Log Analytics:              $NAME_LAW
-  Container Registry:         $NAME_ACR
   Managed Identity (UAMI):    $NAME_UAMI
-  Container Apps Environment: $NAME_ACA_ENV
 
 Phase 2 (AI services — ALL CREATED here, deleted with the RG on wipe):
   AI Search:                  $NAME_SEARCH  (region: $AZ_REGION_SEARCH)
@@ -86,10 +87,10 @@ Phase 2 (AI services — ALL CREATED here, deleted with the RG on wipe):
   Embed deployment:           $AOAI_EMBED_DEPLOYMENT_NAME  ($AOAI_EMBED_SKU_NAME)
   Voice Live model:           $VOICELIVE_MODEL (managed identifier, no deployment)
 
-Phase 4/6/9 (Container Apps):
-  Tool API:                   $NAME_CA_TOOLAPI
-  CRM Dashboard:              $NAME_CA_CRM
-  Video Assist (Step 7):      $NAME_CA_VIDEOASSIST
+Phase 10 (the application VM — one host, three apps behind Caddy):
+  RM Assist cockpit:          https://<rmassist-host>/
+  Tool API:                   https://<rmassist-host>/api
+  Video Assist (Step 7):      https://<rmassist-host>/video
 $(printf '\033[1;36m=====================================================================\033[0m')
 EOM
 

@@ -9,18 +9,19 @@
 #   phase1  -> phase0
 #   phase2  -> phase1            (creates Foundry acct+project, model deployments, Search, ACS)
 #   phase3  -> (none, standalone synthetic data)
-#   phase4  -> phase1
-#   phase5  -> phase1, phase2, phase4
-#   phase6  -> phase1, phase4, phase9   (injects the Video Assist URL into Step 7)
-#   phase9  -> phase1, phase4           (Video Assist; grounds on phase4 Tool API)
+#   phase5  -> phase1, phase2, phase10   (smoke-tests the Tool API through the VM's /api)
+#   phase10 -> phase1, phase2, persistent (the VM: Caddy + all three apps)
 #
 # Build waves (within a wave, phases are independent and run in parallel):
 #   Wave 0:  phase0-foundation
-#   Wave 1:  phase1-platform           (then docker cache setup)
+#   Wave 1:  phase1-platform
 #   Wave 2:  phase2-ai  ∥  phase3-data   (phase2 creates Foundry + deployments + Search + ACS)
-#   Wave 3:  phase4-toolapi            (reads phase2's ACS/speech config via outputs.env)
-#   Wave 4:  phase5-rag ∥  phase9-videoassist
-#   Wave 5:  phase6-crm                (last: injects VIDEOASSIST_URL from phase9)
+#   Wave 3:  phase10-vmhost              (VM + Caddy + TLS), then the three app deploys:
+#            tools/deploy-toolapi-on-vm.sh, deploy-crm-on-vm.sh, deploy-videoassist-on-vm.sh
+#   Wave 4:  phase5-rag                  (indexes SOPs, then smoke-tests https://<host>/api)
+#
+# There are no Container Apps and no ACR any more: the Tool API, the CRM cockpit and Video
+# Assist all run on the single phase10 VM behind Caddy at /api, / and /video respectively.
 #
 # A failed wave aborts the rebuild (a dependency is missing for later waves).
 set -uo pipefail
@@ -122,28 +123,13 @@ else
 fi
 
 # ======================================================================================
-# APPS (phase2 .. phase9) — the billable stack. Runs for BUILD_STAGE=all and =apps.
+# APPS — the billable stack. Runs for BUILD_STAGE=all and =apps.
 # ======================================================================================
-# Docker Hub cache rule on ACR (needs phase1). Idempotent; no-ops without creds.
-CACHE_SETUP="$SCRIPT_DIR/common/setup_docker_cache.sh"
-[[ -x "$CACHE_SETUP" ]] && { bash "$CACHE_SETUP" || warn "Docker cache setup failed (frontends may hit rate limit)"; }
-
-# SPEED: pre-build all three container images CONCURRENTLY in the background so they run
-# while phase2 provisions AI Search (the slow long pole). phase4/6/9 then reuse the ready
-# images instead of building in series. Falls back to inline builds if a build fails.
-PREBUILD_LOG="${ACS_BUILD_LOGDIR:-/tmp/acs_build_logs}/prebuild-images.log"
-PREBUILD_PID=""
-rm -f "$SCRIPT_DIR/common/prebuilt_images.env"
-if [[ "${PREBUILD_IMAGES:-1}" == "1" ]]; then
-  log "Pre-building container images in parallel (overlaps phase2). Log: $PREBUILD_LOG"
-  ( bash "$SCRIPT_DIR/common/prebuild_images.sh" ) >"$PREBUILD_LOG" 2>&1 &
-  PREBUILD_PID=$!
-fi
+# No ACR cache setup and no image pre-build: nothing is containerised any more. The three
+# apps are deployed onto the phase10 VM from source by the tools/deploy-*-on-vm.sh scripts.
 
 # phase2 (create Foundry acct+project+model deployments + Search + ACS + role grant +
 # monitoring) ∥ phase3 (data).
-# NOTE: phase4 reads phase2's outputs.env (ACS endpoint/connection-string, speech region,
-# Foundry/Search endpoints), so phase4 MUST run AFTER phase2 — not in the same wave.
 run_wave up phase2-ai phase3-data || abort "wave2(phase2/phase3)"
 
 # Ensure the parallel image pre-build has finished before phases that consume the images.
@@ -156,11 +142,13 @@ if [[ -n "$PREBUILD_PID" ]]; then
   fi
 fi
 
-# ---- Persistent layer + data-gen VM (phase10) + keyless gpt-5.4 generation on the VM --------
-# The VM (billable, in $AZ_RG) hosts Caddy/TLS and runs the dataset + SOP generation keylessly
-# via its managed identity. Its public IP is the PERSISTENT static IP (in the never-wiped
-# persistent RG) that anchors the reusable Let's Encrypt cert. Set SKIP_VMHOST=1 to skip the VM
-# entirely (no data-gen, no cert), or SKIP_DATAGEN=1 to bring up the VM but not (re)generate.
+# ---- Persistent layer + application VM (phase10) + keyless gpt-5.4 generation on the VM ----
+# The VM (billable, in $AZ_RG) IS the application host: Caddy terminates TLS and serves the
+# cockpit at /, the Tool API at /api and Video Assist at /video. It also runs the dataset +
+# SOP generation keylessly via its managed identity. Its public IP is the PERSISTENT static
+# IP (in the never-wiped persistent RG) that anchors the reusable Let's Encrypt cert.
+# SKIP_VMHOST=1 skips the VM entirely — which now means NO APPLICATIONS AT ALL, not just no
+# data-gen, because there is nowhere else for them to run.
 if [[ "${SKIP_VMHOST:-0}" != "1" ]]; then
   # Self-heal the persistent layer so 'bash build.sh' works from any state (idempotent).
   if [[ -z "$(persist_ip 2>/dev/null)" ]]; then
@@ -169,8 +157,7 @@ if [[ "${SKIP_VMHOST:-0}" != "1" ]]; then
   else
     ok "Persistent static IP present: $(persist_ip) ($(rmassist_host))"
   fi
-  # phase4 (Tool API) and phase10 (VM/Caddy/cert) are independent given phase2 — build in parallel.
-  run_wave up phase4-toolapi phase10-vmhost || abort "wave3(phase4/phase10)"
+  run_wave up phase10-vmhost || abort "wave3(phase10)"
 
   # Generate/refresh the Contoso Bank dataset + SOP corpus ON THE VM (keyless gpt-5.4). The
   # BASELINE_FROZEN sentinel makes this a fast no-op unless REGENERATE_DATA=1 forces a rebuild.
@@ -185,57 +172,46 @@ if [[ "${SKIP_VMHOST:-0}" != "1" ]]; then
     warn "SKIP_DATAGEN=1 — VM is up but data/SOP generation was skipped."
   fi
 
-  # Deploy the FastAPI Tool API onto the VM as a native systemd service (Phase B of the
-  # Container-Apps -> VM migration). This runs ALONGSIDE the phase4 Container App for now:
-  # the two are independent, and phase4 is only removed in Phase E once the CRM and Video
-  # Assist have also moved. Running it here means the VM path is exercised on every build
-  # rather than being dead code until the cutover.
-  # It is a hard failure, not a warning: its health gate is the first end-to-end proof that
-  # Caddy's /api route and strip_prefix work, and silently continuing past that would just
-  # move the discovery to a later, more confusing phase.
+  # ---- The three applications, deployed onto the VM from source ----
+  # Order matters: the Tool API first (phase5 smoke-tests it and the cockpit calls it), then
+  # the cockpit which owns the webroot, then Video Assist, then the console into /console/.
+
+  # Hard failure, not a warning: the Tool API health gate is the end-to-end proof that
+  # Caddy's /api route and its strip_prefix work. Continuing past that would just move the
+  # discovery to a later, more confusing point.
   if [[ "${SKIP_TOOLAPI_VM:-0}" != "1" ]]; then
     log "Deploying the Tool API onto the VM (systemd + Caddy /api)..."
     bash "$SCRIPT_DIR/../tools/deploy-toolapi-on-vm.sh" || abort "deploy-toolapi-on-vm"
   fi
 
-  # Deploy the RM Assist CRM cockpit as static files into the VM's Caddy webroot (Phase C).
-  # Runs alongside the phase6 Container App until Phase E retires it, same as the Tool API.
-  # SKIP_CRM_VM=1 opts out.
+  # The RM Assist cockpit — static files at the webroot, served directly by Caddy.
   if [[ "${SKIP_CRM_VM:-0}" != "1" ]]; then
     log "Deploying the RM Assist cockpit onto the VM (static, served by Caddy at /)..."
     bash "$SCRIPT_DIR/../tools/deploy-crm-on-vm.sh" || abort "deploy-crm-on-vm"
   fi
 
-  # Deploy Video Assist onto the VM (Phase D) as a native systemd service behind /video.
-  # Runs alongside the phase9 Container App until Phase E retires it. SKIP_VIDEOASSIST_VM=1
-  # opts out. Must run AFTER the cockpit deploy so the CRM's injected VIDEOASSIST_URL and
-  # the app it points at come up in a sensible order.
+  # Video Assist — Node/Express + the Vite SPA, behind /video.
   if [[ "${SKIP_VIDEOASSIST_VM:-0}" != "1" ]]; then
     log "Deploying Video Assist onto the VM (systemd + Caddy /video)..."
     bash "$SCRIPT_DIR/../tools/deploy-videoassist-on-vm.sh" || abort "deploy-videoassist-on-vm"
   fi
 
-  # Deploy the static Core Banking & CRM console + dataset to the VM's Caddy webroot so it is
-  # served over the reusable TLS host. Runs whenever the VM is up (independent of SKIP_DATAGEN);
-  # the dataset is either freshly generated above or the committed baseline. SKIP_CONSOLE=1 skips.
-  # NOTE: this now lands in /opt/rmx/web/console, NOT the webroot — the webroot belongs to the
-  # cockpit deployed just above. Must therefore run AFTER it, so the cockpit cannot clobber it.
+  # The Core Banking console lands in /opt/rmx/web/console, NOT the webroot — the webroot
+  # belongs to the cockpit deployed above, so this must run AFTER it.
   if [[ "${SKIP_CONSOLE:-0}" != "1" ]]; then
     log "Deploying Core Banking & CRM console to the VM (served over TLS at /console/)..."
     bash "$SCRIPT_DIR/../tools/deploy-console-on-vm.sh" || warn "Console deploy failed — /console/ will 404 (the cockpit at / is unaffected)."
   fi
 else
-  warn "SKIP_VMHOST=1 — skipping the data-gen/Caddy VM (phase10), the persistent layer and data generation."
-  # phase4 still needs to come up for the app pipeline.
-  run_wave up phase4-toolapi || abort "phase4-toolapi"
+  warn "SKIP_VMHOST=1 — skipping the application VM. NOTHING will be deployed: the Tool API,"
+  warn "the cockpit and Video Assist all run on that VM now. Only the Azure services (Foundry,"
+  warn "Search, ACS, Speech) and the dataset will exist."
 fi
 
-# Wave 4 leaves: all need phase4; phase5 also needs phase2; phase9 grounds on phase4's Tool API.
-run_wave up phase5-rag phase9-videoassist || abort "wave4(phase5/phase9)"
-
-# Wave 5: CRM dashboard last — it injects the Video Assist URL (phase9) so Step 7
-# (the capstone) launches the video call pre-bound to Rakesh Sharma (CTB-RTL-002).
-run_wave up phase6-crm || abort "phase6-crm"
+# Wave 4: index the SOP corpus into AI Search, then smoke-test RAG through the VM's /api.
+# phase10 is wave 3 and the Tool API deploy runs inside that block, so the endpoint phase5
+# calls is already up and health-gated by the time we get here.
+run_wave up phase5-rag || abort "wave4(phase5)"
 
 TOTAL=$(( $(date +%s) - T_START ))
 cat <<EOF

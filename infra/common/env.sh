@@ -183,19 +183,17 @@ export AZURE_EXISTING_AIPROJECT_ENDPOINT="https://${NAME_AISERVICES}.openai.azur
 
 # Convention: <abbrev>-rmx-<purpose>[-suffix]. Globally-unique names carry the suffix.
 export NAME_LAW="log-rmx"                        # Log Analytics workspace
-export NAME_ACR="acrrmx${SUFFIX}"                # ACR: 5-50 chars, alphanumeric only
 export NAME_UAMI="id-rmx-app"                    # user-assigned managed identity
-export NAME_ACA_ENV="cae-rmx"                    # Container Apps environment
+# NOTE: there is no ACR and no Container Apps environment any more. The three apps run as
+# native systemd services on the phase10 VM behind Caddy, so nothing is containerised and
+# nothing needs a registry. The UAMI REMAINS load-bearing: every phase2 role assignment is
+# keyed to it, and phase10 attaches it to the VM so the app services inherit those grants.
 
 export NAME_SEARCH="srch-rmx-${SUFFIX}"          # AI Search: 2-60, lowercase+digits+hyphens
 export NAME_ACS="acs-rmx-${SUFFIX}"              # ACS (video/voice tokens + telemetry); no purchased PSTN number
 export NAME_SPEECH="spch-rmx-${SUFFIX}"          # Speech (ACS media-streaming fallback)
 
-export NAME_CA_TOOLAPI="ca-rmx-toolapi"          # FastAPI Tool API (phase4)
-export NAME_CA_CRM="ca-rmx-dashboard"            # CRM cockpit dashboard (phase6)
-
 # Video Assist (Step 7 live video call).
-export NAME_CA_VIDEOASSIST="videoassist-web"     # Container App name (phase9)
 export NAME_ACS_VIDEO="acs-rmx-video-${SUFFIX}"  # video tokens only (no purchased PSTN number)
 
 # AI Search index name for the SOP knowledge base (phase5 RAG).
@@ -306,7 +304,8 @@ export CERT_LOCK_FILE="${CERT_LOCK_FILE:-$CERT_DIR/.cert-lock.json}"
 # =====================================================================================
 # 6) VIDEO ASSIST — AI + Speech + ACS  (derived from the created Foundry account)
 # =====================================================================================
-# These are injected as container env vars by phase9-videoassist/up.sh. Entra auth only,
+# These are injected as systemd EnvironmentFile entries by tools/deploy-videoassist-on-vm.sh.
+# Entra auth only,
 # no keys. All derived from the context above so there is a single place to change them.
 export AZURE_AI_ENDPOINT="https://${EXISTING_AISERVICES_NAME}.services.ai.azure.com/openai/v1"
 export AZURE_AI_CHAT_DEPLOYMENT="$EXISTING_AOAI_CHAT_DEPLOYMENT"
@@ -429,24 +428,15 @@ export MEETING_DURATION_MINUTES="${MEETING_DURATION_MINUTES:-30}"
 # 8b) PERFORMANCE / SPEED TUNABLES  (make deploy + wipe faster; all overridable)
 # =====================================================================================
 # These only affect WALL-CLOCK time, never what is created. Every one has a safe default
-# and can be overridden from the environment (e.g. `PREBUILD_IMAGES=0 bash deploy.sh`).
+# and can be overridden from the environment.
 #
-# PREBUILD_IMAGES=1 builds all three container images (Tool API, Video Assist, CRM
-#   dashboard) CONCURRENTLY right after phase1 — overlapped with phase2's slow AI Search
-#   provisioning — so the later phases just deploy a ready image instead of building in
-#   series. Set 0 to have each phase build its own image inline (the original behavior).
-export PREBUILD_IMAGES="${PREBUILD_IMAGES:-1}"
-#
-# PHASE5_REBUILD_TOOLAPI=0 SKIPS phase5's Tool API image rebuild + redeploy. The image
-#   phase4 already built from backend/ contains the RAG code (rag.py, search.py), so the
-#   rebuild is redundant; phase5 still creates the index and uploads the SOP embeddings.
-#   Set 1 to force a rebuild+redeploy in phase5 (e.g. if you changed backend code between
-#   phase4 and phase5).
-export PHASE5_REBUILD_TOOLAPI="${PHASE5_REBUILD_TOOLAPI:-0}"
+# PREBUILD_IMAGES and PHASE5_REBUILD_TOOLAPI are GONE. Both were container-image knobs:
+# nothing is containerised any more, so there is no image to pre-build and no Container App
+# revision to roll. The equivalent of "redeploy the Tool API" is re-running
+# tools/deploy-toolapi-on-vm.sh.
 #
 # WIPE_PARALLEL_DELETES=1 deletes INDEPENDENT resources CONCURRENTLY during teardown
-#   (phase1: Container Apps env / ACR / Log Analytics / UAMI; phase2: AI Search
-#   / ACS / Email). The slow Container Apps environment delete then overlaps the quick ones.
+#   (phase1: Log Analytics / UAMI; phase2: AI Search / ACS / Email).
 #   Set 0 for the original one-at-a-time teardown (easier to read logs when debugging).
 export WIPE_PARALLEL_DELETES="${WIPE_PARALLEL_DELETES:-1}"
 
@@ -555,10 +545,10 @@ assert_project_tag() {
 
 # -------------------------------------------------------------------------------------
 # regen_phase1_outputs — rebuild infra/phase1-platform/outputs.env FROM AZURE if missing.
-# phase2/4/5/6/9 up.sh source that file for ACR_LOGIN_SERVER / UAMI_*. When the
-# billable build (build.sh, BUILD_STAGE=apps) runs in a shell/checkout where phase1 up.sh
-# did not run (foundation was created earlier by build_rg.sh, or the tarball was
-# re-extracted), the file may be absent — reconstruct it so the app phases don't die.
+# phase2, phase5 and phase10 source that file for UAMI_*. When the billable build
+# (build.sh, BUILD_STAGE=apps) runs in a shell/checkout where phase1 up.sh did not run
+# (foundation created earlier by build_rg.sh, or a fresh clone on the jump host), the file
+# is absent — reconstruct it so the later phases don't die.
 regen_phase1_outputs() {
   local root outfile
   root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -567,25 +557,21 @@ regen_phase1_outputs() {
     return 0
   fi
   log "Reconstructing Phase 1 outputs from Azure (outputs.env missing)..."
-  local acr_login uami_json uami_pid="" uami_cid="" uami_id="" cae_domain
-  acr_login="$(az acr show -n "$NAME_ACR" -g "$AZ_RG" --query loginServer -o tsv 2>/dev/null || true)"
+  local uami_json uami_pid="" uami_cid="" uami_id=""
   uami_json="$(az identity show -n "$NAME_UAMI" -g "$AZ_RG" -o json 2>/dev/null || true)"
   if [[ -n "$uami_json" ]]; then
     uami_pid="$(echo "$uami_json" | jq -r '.principalId // empty')"
     uami_cid="$(echo "$uami_json" | jq -r '.clientId // empty')"
     uami_id="$(echo "$uami_json" | jq -r '.id // empty')"
   fi
-  cae_domain="$(az containerapp env show -n "$NAME_ACA_ENV" -g "$AZ_RG" --query properties.defaultDomain -o tsv 2>/dev/null || true)"
-  if [[ -z "$acr_login" || -z "$uami_id" ]]; then
-    die "Could not reconstruct Phase 1 outputs from Azure (ACR/UAMI missing). Run 'bash build_rg.sh' first."
+  if [[ -z "$uami_id" ]]; then
+    die "Could not reconstruct Phase 1 outputs from Azure (UAMI missing). Run 'bash build_rg.sh' first."
   fi
   cat > "$outfile" <<EOF
 # Regenerated from Azure by env.sh:regen_phase1_outputs on $(date -u --iso-8601=seconds)
-export ACR_LOGIN_SERVER="$acr_login"
 export UAMI_PRINCIPAL_ID="$uami_pid"
 export UAMI_CLIENT_ID="$uami_cid"
 export UAMI_ID="$uami_id"
-export CAE_DEFAULT_DOMAIN="$cae_domain"
 EOF
   ok "Reconstructed Phase 1 outputs -> $outfile"
 }
@@ -601,24 +587,17 @@ EOF
 # from a single source rather than being written independently in two places.
 #
 # Historically phase4-toolapi/up.sh generated and persisted this token in its own
-# outputs.env. phase4 is being retired (the Tool API now runs on the VM), so the token needs
-# a home that outlives it: the git-ignored infra/common/secrets.env, which is already the
-# established place for exactly this kind of value and survives outputs.env regeneration.
+# outputs.env. That phase is gone (the Tool API now runs on the VM), so the token lives in
+# the git-ignored infra/common/secrets.env, which is already the established place for
+# exactly this kind of value and survives outputs.env regeneration.
 ensure_toolapi_bearer() {
-  local root secrets phase4_out tok=""
+  local root secrets tok=""
   root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   secrets="$root/infra/common/secrets.env"
-  phase4_out="$root/infra/phase4-toolapi/outputs.env"
 
   # 1) already in the environment (secrets.env is sourced at the top of this file)
   tok="${TOOLAPI_BEARER_TOKEN:-${TOOLAPI_BEARER:-}}"
-  # 2) fall back to phase4's outputs while that phase still exists, so an in-place upgrade
-  #    keeps the SAME token and previously-deployed callers do not start failing auth.
-  if [[ -z "$tok" && -f "$phase4_out" ]]; then
-    tok="$(sed -n 's/^export TOOLAPI_BEARER_TOKEN="\(.*\)"$/\1/p' "$phase4_out" | head -1)"
-    [[ -n "$tok" ]] && log "Reusing the Tool API bearer token from phase4 outputs."
-  fi
-  # 3) first run anywhere: mint one and persist it so every later phase agrees.
+  # 2) first run anywhere: mint one and persist it so every later phase agrees.
   if [[ -z "$tok" ]]; then
     tok="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))' 2>/dev/null || openssl rand -base64 36 | tr -d '\n/+=')"
     [[ -n "$tok" ]] || die "Could not generate a Tool API bearer token (need python3 or openssl)."
@@ -643,9 +622,7 @@ ensure_toolapi_bearer() {
 foundation_present() {
   FOUNDATION_MISSING=()
   az group show -n "$AZ_RG" -o none 2>/dev/null                              || FOUNDATION_MISSING+=("resource group $AZ_RG")
-  az acr show -n "$NAME_ACR" -g "$AZ_RG" -o none 2>/dev/null                  || FOUNDATION_MISSING+=("ACR $NAME_ACR")
   az identity show -n "$NAME_UAMI" -g "$AZ_RG" -o none 2>/dev/null            || FOUNDATION_MISSING+=("UAMI $NAME_UAMI")
-  az containerapp env show -n "$NAME_ACA_ENV" -g "$AZ_RG" -o none 2>/dev/null || FOUNDATION_MISSING+=("Container Apps env $NAME_ACA_ENV")
   (( ${#FOUNDATION_MISSING[@]} == 0 ))
 }
 
@@ -658,7 +635,7 @@ assert_foundation_present() {
     warn "Foundation is incomplete: ${FOUNDATION_MISSING[*]}"
     die "Run 'bash build_rg.sh' ONCE first to create the resource group + platform (non-billable), then re-run build.sh."
   fi
-  ok "Foundation present: RG + ACR + UAMI + Container Apps env."
+  ok "Foundation present: RG + UAMI."
   regen_phase1_outputs
 }
 
@@ -668,34 +645,29 @@ print_demo_urls() {
   # Print URLs discovered from phase outputs. Safe when some phases have not run.
   local root
   root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-  local toolapi="" dash="" search="" videoassist="" console="" vmhost=""
-  [[ -f "$root/phase4-toolapi/outputs.env" ]] && source "$root/phase4-toolapi/outputs.env" && toolapi="${TOOLAPI_URL:-}"
-  [[ -f "$root/phase6-crm/outputs.env" ]] && source "$root/phase6-crm/outputs.env" && dash="${DASH_URL:-${DASHBOARD_URL:-}}"
-  [[ -f "$root/phase9-videoassist/outputs.env" ]] && source "$root/phase9-videoassist/outputs.env" && videoassist="${VIDEOASSIST_URL:-}"
+  local toolapi="" search="" videoassist="" console="" vmhost=""
   [[ -f "$root/phase5-rag/outputs.env" ]] && source "$root/phase5-rag/outputs.env" && search="${SEARCH_ENDPOINT:-${RAG_INDEX_NAME:-${search:-}}}"
-  # The VM host is the single origin everything is migrating onto. Sourced LAST so its
-  # TOOLAPI_URL/VIDEOASSIST_URL win over the Container App values above once they exist.
+  # ONE host now serves everything: / is the cockpit, /api the Tool API, /video the call app.
   if [[ -f "$root/phase10-vmhost/outputs.env" ]]; then
     source "$root/phase10-vmhost/outputs.env"
     vmhost="${RMASSIST_URL:-}"
     console="${vmhost%/}/console/"
-    toolapi="${TOOLAPI_URL:-$toolapi}"
-    videoassist="${VIDEOASSIST_URL:-$videoassist}"
+    toolapi="${TOOLAPI_URL:-}"
+    videoassist="${VIDEOASSIST_URL:-}"
   fi
   cat <<EOF
 
 $(printf '\033[1;36m========== Contoso Retail RM Assist — Rakesh Sharma ==========\033[0m')
-  RM Assist cockpit (VM):    ${vmhost:-not deployed yet}
-  Core Banking Console (VM): ${console:-not deployed yet}
-  CRM Dashboard:             ${dash:-not deployed yet}
+  RM Assist cockpit:         ${vmhost:-not deployed yet}
+  Core Banking Console:      ${console:-not deployed yet}
   Video Assist (Step 7):     ${videoassist:-not deployed yet}
   Step 7 launch pattern:     ${videoassist:+$videoassist/?customer_id=$DEFAULT_CUSTOMER_ID}
   Tool API:                  ${toolapi:-not deployed yet}
   AI Search endpoint:        ${search:-see phase5 outputs / Azure portal}
 
   Health checks:
+    ${vmhost:+curl -fsS "${vmhost%/}/healthz"}
     ${toolapi:+curl -fsS "$toolapi/healthz"}
-    ${dash:+curl -fsS "$dash/healthz"}
     ${videoassist:+curl -fsS "$videoassist/healthz"}
 $(printf '\033[1;36m==============================================================\033[0m')
 EOF

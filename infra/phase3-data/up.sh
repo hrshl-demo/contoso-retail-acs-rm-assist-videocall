@@ -52,4 +52,4 @@ python3 "$SCRIPT_DIR/validate_seed.py"
 
 ok "Phase 3 complete. Data pack is consistent and locked."
 log "Consumed later by: Phase 4 (ingest into SQLite), Phase 5 (RAG indexes docs/sop + knowledge_base)."
-log "Next: bash infra/phase4-toolapi/up.sh"
+log "Next: bash infra/phase10-vmhost/up.sh"

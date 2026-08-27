@@ -421,18 +421,18 @@ sequenceDiagram
 
 ## 11. Infrastructure & the phased build engine (`infra/`)
 
-Everything is provisioned by **idempotent shell + Bicep**, orchestrated in **8 phases**. Images build **server-side with `az acr build`** — no Docker daemon and no VM are required on the machine running the build.
+Everything is provisioned by **idempotent shell + Bicep**, orchestrated in **6 phases**. The three applications are **deployed from source onto a single Ubuntu VM** over SSH — no Docker daemon, no container registry, and no image build anywhere in the pipeline.
 
 | Phase | Folder | Billable? | Creates |
 |---|---|---|---|
 | **0 Foundation** | `phase0-foundation` | No | Resource group + provider registration |
-| **1 Platform** | `phase1-platform` | ~$5/mo | Log Analytics, ACR (Basic), UAMI, Container Apps environment |
-| **2 AI** | `phase2-ai` | **Yes** | AI Foundry account + project, chat + embedding deployments, **AI Search**, **ACS**, **Speech**, role assignments |
+| **1 Platform** | `phase1-platform` | ~$2/mo | Log Analytics + UAMI (the identity phase2's role assignments are keyed to, and the one the VM carries) |
+| **2 AI** | `phase2-ai` | **Yes** | AI Foundry account + project, chat + voice + embedding deployments, **AI Search**, **ACS**, **Speech**, role assignments |
 | **3 Data** | `phase3-data` | No | Validates + locks the CSV/SOP pack (`validate_seed.py`) |
-| **4 Tool API** | `phase4-toolapi` | Yes | Builds + deploys the FastAPI Tool API Container App |
-| **5 RAG** | `phase5-rag` | Yes | Creates the Search index + indexes `docs/sop` + knowledge_base |
-| **6 CRM** | `phase6-crm` | Yes | Builds + deploys the CRM cockpit Container App |
-| **9 Video Assist** | `phase9-videoassist` | Yes | ACS (video), builds + deploys the Video Assist Container App |
+| **10 App VM** | `phase10-vmhost` | Yes | The **application host**: VM + NSG + Caddy/TLS, then `tools/deploy-{toolapi,crm,videoassist,console}-on-vm.sh` |
+| **5 RAG** | `phase5-rag` | Yes | Creates the Search index + indexes `docs/sop`, then smoke-tests RAG via `https://<host>/api` |
+
+Routing on the single host: `/` cockpit · `/api/*` Tool API (uvicorn, loopback) · `/video/*` Video Assist (Node, loopback) · `/console/` Core Banking console. Caddy is the sole public ingress.
 
 Drivers: `infra/rebuild-parallel.sh` (dependency-aware parallel build) and `infra/wipe-parallel.sh` (parallel teardown). `infra/common/env.sh` is the **central config**; `infra/common/preflight_validate.sh` is the **local gate** (Python compile, JS `node -c`, shell syntax, seed validation) — the same gate CI runs.
 

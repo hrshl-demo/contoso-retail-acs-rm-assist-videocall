@@ -2181,7 +2181,7 @@ async function openVoice(cid){
 function openVideoCall(cid){
   const base = (typeof VIDEOASSIST_URL !== 'undefined' ? VIDEOASSIST_URL : '').replace(/\/+$/,'');
   if(!base || base.includes('invalid.local')){
-    toast('Video Assist URL not configured (deploy phase9-videoassist).');
+    toast('Video Assist URL not configured (deploy the VM: bash build.sh).');
     return;
   }
   const custUrl = `${base}/?customer_id=${encodeURIComponent(cid)}`;
@@ -2202,11 +2202,11 @@ function openVideoCall(cid){
 }
 // Step 7: customer self-service scheduling page (served by the Video Assist app).
 function bookingUrl(cid){ const base=(typeof VIDEOASSIST_URL!=='undefined'?VIDEOASSIST_URL:'').replace(/\/+$/,''); return (!base||base.includes('invalid.local'))?null:`${base}/schedule?customer_id=${encodeURIComponent(cid)}`; }
-function openScheduling(cid){ const u=bookingUrl(cid); if(!u){ toast('Video Assist URL not configured (deploy phase9-videoassist).'); return; } window.open(u,'_blank'); toast('Opened the booking page for '+cid+'.'); }
+function openScheduling(cid){ const u=bookingUrl(cid); if(!u){ toast('Video Assist URL not configured (deploy the VM: bash build.sh).'); return; } window.open(u,'_blank'); toast('Opened the booking page for '+cid+'.'); }
 // Step 7 (mobile): the customer's logged-in mobile banking portal with the one-tap
 // "Video call your RM" instant-call flow. The RM-side Teams link is auto-generated.
 function customerAppUrl(cid){ const base=(typeof VIDEOASSIST_URL!=='undefined'?VIDEOASSIST_URL:'').replace(/\/+$/,''); return (!base||base.includes('invalid.local'))?null:`${base}/bank?customer_id=${encodeURIComponent(cid)}`; }
-function openCustomerApp(cid){ const u=customerAppUrl(cid); if(!u){ toast('Video Assist URL not configured (deploy phase9-videoassist).'); return; } window.open(u,'_blank'); toast('Opened the mobile banking app for '+cid+' (tap “Video call your RM”).'); }
+function openCustomerApp(cid){ const u=customerAppUrl(cid); if(!u){ toast('Video Assist URL not configured (deploy the VM: bash build.sh).'); return; } window.open(u,'_blank'); toast('Opened the mobile banking app for '+cid+' (tap “Video call your RM”).'); }
 function copyCustomerAppLink(cid){ const u=customerAppUrl(cid); if(!u){ toast('Video Assist URL not configured.'); return; } try{ navigator.clipboard.writeText(u); }catch{} window.prompt('Share this customer mobile-app link with '+cid+':', u); }
 function copyBookingLink(cid){ const u=bookingUrl(cid); if(!u){ toast('Video Assist URL not configured.'); return; } try{ navigator.clipboard.writeText(u); }catch{} window.prompt('Share this booking link with '+cid+':', u); }
 // Progressive-disclosure helpers (UI v6): staggered reveal + accordion toggle.

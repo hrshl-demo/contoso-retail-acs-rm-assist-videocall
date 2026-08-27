@@ -18,7 +18,7 @@ your deploy on demand. Both are just scripts GitHub runs for you, defined in
 |------|---------|--------------|------|
 | `.github/workflows/ci.yml` | every push / PR | lint + validate (shell, Python, JS, data). No Azure. | free |
 | `.github/workflows/deploy.yml` | **manual** button | logs into Azure (OIDC) → `bash build.sh --type=ptu\|payg` | **billable** |
-| `.github/workflows/wipe.yml` | **manual** button | logs into Azure (OIDC) → `bash wipe.sh [--delete-rg]` | stops billing |
+| `.github/workflows/wipe.yml` | **manual** button | logs into Azure (OIDC) → `bash wipe.sh` (full purge by default) | stops billing |
 | `scripts/setup-github-oidc.sh` | run once | wires Azure↔GitHub trust + sets repo secrets | free |
 
 Deploys are **manual only** — nothing bills automatically when you push.
@@ -28,9 +28,8 @@ Deploys are **manual only** — nothing bills automatically when you push.
 The deploy runs on a GitHub-hosted Ubuntu machine that has `az` built in. It logs
 in with **OpenID Connect**: GitHub proves "I am this repo's `main` branch", Azure
 checks a trust you set up once, and hands back a short-lived token. **No secret or
-password is ever stored.** Because the images build server-side with `az acr
-build`, the runner needs **no Docker and no VM** — the whole stack builds from
-GitHub.
+password is ever stored.** The runner needs **no Docker**: nothing is containerised,
+and the three applications are deployed from source onto the Azure VM over SSH.
 
 ```mermaid
 flowchart LR
@@ -134,14 +133,15 @@ deploy workflow only writes the ones you provide into `infra/common/secrets.env`
 1. GitHub → **Actions** tab.
 2. **Deploy to Azure** → **Run workflow** → pick `ptu` or `payg` → **Run**.
 3. Watch the live log. On success it prints the CRM + Video Assist URLs.
-4. When you're done: **Wipe Azure** → **Run workflow** → `keep-rg` (fast, keeps the
-   platform for the next demo) or `delete-rg` (delete everything).
+4. When you're done: **Wipe Azure** → **Run workflow** → `full-purge` (the default —
+   deletes the whole billable RG; the persistent static IP and the committed cert
+   are never touched) or `keep-rg` (keeps the RG + platform for a faster next demo).
 
 You can also trigger from the terminal:
 
 ```bash
 gh workflow run "Deploy to Azure" -f deploy_type=ptu
-gh workflow run "Wipe Azure"      -f scope=delete-rg
+gh workflow run "Wipe Azure"      -f scope=full-purge
 gh run watch                      # follow the latest run
 ```
 

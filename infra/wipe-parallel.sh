@@ -222,17 +222,16 @@ fi
 # This isolated stack has no purchased PSTN number, so a full teardown (delete ACS) is the
 # default. Set ACS_FORCE_DELETE=0 to preserve ACS across a wipe/rebuild.
 export ACS_FORCE_DELETE="${ACS_FORCE_DELETE:-1}"
-# Fast-iteration mode: KEEP_PLATFORM=1 preserves the Phase 1 platform (Container Apps
-# environment, ACR, UAMI, Log Analytics), skipping the slow env-delete.
+# Fast-iteration mode: KEEP_PLATFORM=1 preserves the Phase 1 platform (UAMI + Log Analytics).
 export KEEP_PLATFORM="${KEEP_PLATFORM:-0}"
 
-warn "WIPE_DELETE_RG=0 — per-phase teardown; the resource group $AZ_RG will be left in place."
+warn "--keep-rg was passed — per-phase teardown; the resource group $AZ_RG will be left in place."
 
-run_wave down phase9-videoassist phase6-crm phase5-rag || warn "Wave 1 had failures (continuing)"
-run_wave down phase10-vmhost phase4-toolapi phase3-data || warn "Wave 2 had failures (continuing)"
+run_wave down phase5-rag                        || warn "Wave 1 had failures (continuing)"
+run_wave down phase10-vmhost phase3-data        || warn "Wave 2 had failures (continuing)"
 run_wave down phase2-ai                         || warn "Wave 3 had failures (continuing)"
 if [[ "$KEEP_PLATFORM" == "1" ]]; then
-  warn "KEEP_PLATFORM=1 — preserving Phase 1 platform (env/ACR/UAMI/LogAnalytics). Skipping the slow env-delete."
+  warn "KEEP_PLATFORM=1 — preserving Phase 1 platform (UAMI + Log Analytics)."
 else
   run_wave down phase1-platform                 || warn "Wave 4 had failures (continuing)"
   run_wave down phase0-foundation               || warn "Wave 5 had failures (continuing)"

@@ -249,13 +249,24 @@ The build runs `infra/rebuild-parallel.sh`, which builds in dependency-ordered w
 | Wave | Phase(s) | Stage | What it does |
 |------|----------|-------|--------------|
 | 0 | `phase0-foundation` | foundation | **Create the resource group** + register resource providers |
-| 1 | `phase1-platform` | foundation | Log Analytics, ACR, managed identity, Container Apps env |
-| 2 | `phase2-ai` ∥ `phase3-data` | apps | **Create the AI Foundry account + project**, then the `gpt-4.1-mini` chat deployment (PTU or PAYG) **and** the `text-embedding-3-small` embedding deployment, AI Search, ACS + Email, Speech, role grants · validate synthetic data |
-| 3 | `phase4-toolapi` | apps | FastAPI Tool API container app (reads phase2 config from `outputs.env`) |
-| 4 | `phase5-rag` ∥ `phase9-videoassist` | apps | Index SOPs into AI Search · deploy the Video Assist live-call app |
-| 5 | `phase6-crm` | apps | CRM dashboard (injects the Video Assist URL into Step 7) |
+| 1 | `phase1-platform` | foundation | Log Analytics + managed identity (UAMI) |
+| 2 | `phase2-ai` ∥ `phase3-data` | apps | **Create the AI Foundry account + project**, then the `gpt-5.4` chat deployment, the `gpt-5.4-mini` voice deployment **and** the `text-embedding-3-small` embedding deployment, AI Search, ACS + Email, Speech, role grants · validate synthetic data |
+| 3 | `phase10-vmhost` | apps | The **application VM**: Caddy + TLS, then the three app deploys (`tools/deploy-toolapi-on-vm.sh`, `deploy-crm-on-vm.sh`, `deploy-videoassist-on-vm.sh`) and the Core Banking console |
+| 4 | `phase5-rag` | apps | Index SOPs into AI Search, then smoke-test RAG through `https://<host>/api` |
 
-On success the build prints the CRM dashboard URL, the Video Assist URL, the Step 7 launch link
+Everything is served from **one host, one certificate**:
+
+| Path | Serves |
+|------|--------|
+| `/` | RM Assist cockpit (static, `file_server`) |
+| `/api/*` | Tool API — FastAPI/uvicorn on `127.0.0.1:8000` (`rmx-toolapi.service`) |
+| `/video/*` | Video Assist — Node/Express + Vite SPA on `127.0.0.1:3000` (`rmx-videoassist.service`) |
+| `/console/` | Core Banking console (static) |
+
+There are **no Container Apps and no container registry**. Both app services bind loopback
+only; Caddy is the sole public ingress.
+
+On success the build prints the cockpit URL, the Video Assist URL, the Step 7 launch link
 (`…/?customer_id=CTB-RTL-002`), and a health check.
 
 > **Cost note:** all deployments are `GlobalStandard`, billing **per token used** rather than per
@@ -391,15 +402,11 @@ only the SKU/name/capacity differ. The embedding deployment is always created to
 | Variable | Default |
 |----------|---------|
 | `NAME_LAW` | `log-rmx` |
-| `NAME_ACR` | `acrrmx${SUFFIX}` |
 | `NAME_UAMI` | `id-rmx-app` |
-| `NAME_ACA_ENV` | `cae-rmx` |
 | `NAME_SEARCH` | `srch-rmx-${SUFFIX}` |
 | `NAME_ACS` | `acs-rmx-${SUFFIX}` |
 | `NAME_SPEECH` | `spch-rmx-${SUFFIX}` |
-| `NAME_CA_TOOLAPI` | `ca-rmx-toolapi` |
-| `NAME_CA_CRM` | `ca-rmx-dashboard` |
-| `NAME_CA_VIDEOASSIST` | `videoassist-web` |
+| `NAME_VM` | `vm-rmx-host` |
 | `NAME_ACS_VIDEO` | `acs-rmx-video-${SUFFIX}` |
 | `SEARCH_INDEX_NAME` | `contoso-retail-policy-index` |
 
@@ -470,16 +477,18 @@ wipe.sh              teardown wrapper (keeps the RG by default; --delete-rg for 
 infra/
   common/            env.sh · run_wave.sh · preflight_validate.sh
   phase0-foundation  create RG + register providers
-  phase1-platform    Log Analytics, ACR, UAMI, Container Apps env  (Bicep)
-  phase2-ai          CREATE AI Foundry acct+project + chat & embed deployments + AI Search + ACS + Speech + roles  (Bicep + az cli)
+  phase1-platform    Log Analytics + UAMI  (Bicep)
+  phase2-ai          CREATE AI Foundry acct+project + chat/voice/embed deployments + AI Search + ACS + Speech + roles  (Bicep + az cli)
   phase3-data        validate synthetic data
-  phase4-toolapi     FastAPI Tool API container app  (Bicep)
   phase5-rag         index SOPs into AI Search  (Python)
-  phase6-crm         CRM cockpit dashboard container app  (Bicep)
-  phase9-videoassist Video Assist live-call container app  (az cli)
-  phase10-vmhost     data-gen + Caddy/TLS Ubuntu VM (Bicep + cloud-init)  [static IP, Let's Encrypt, keyless gpt-5.4]
+  phase10-vmhost     THE APPLICATION VM: Caddy/TLS + all three apps (Bicep + cloud-init)  [static IP, Let's Encrypt, keyless gpt-5.4]
+                     Caddyfile.tmpl · rmx-toolapi.service.tmpl · rmx-videoassist.service.tmpl
   persistent/        never-wiped static IP + reusable cert anchor  (build_persistent.sh)
+  cert/              committed, ENCRYPTED Let's Encrypt store (tools/cert_store.sh)
   rebuild-parallel.sh / wipe-parallel.sh
+tools/
+  deploy-toolapi-on-vm.sh · deploy-crm-on-vm.sh · deploy-videoassist-on-vm.sh
+  deploy-console-on-vm.sh · run-generation-on-vm.sh · cert_store.sh · commit-artifacts.sh
 backend/             FastAPI Tool API (app/, Dockerfile, requirements.txt)
 frontend-crm/        CRM dashboard (html/, nginx/, Dockerfile)
 videoassist/         Live video-call + nudge app (Node/Vite; server.js, nudge-engine.js, client/)

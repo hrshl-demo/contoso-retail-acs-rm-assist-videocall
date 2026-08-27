@@ -93,27 +93,10 @@ if [[ "$STATUS" -ne 0 ]]; then
   exit "$STATUS"
 fi
 
-VA_FQDN="$(az containerapp show --name "$NAME_CA_VIDEOASSIST" --resource-group "$AZ_RG" \
-  --query properties.configuration.ingress.fqdn --output tsv 2>/dev/null || true)"
-DASH_FQDN="$(az containerapp show --name "$NAME_CA_CRM" --resource-group "$AZ_RG" \
-  --query properties.configuration.ingress.fqdn --output tsv 2>/dev/null || true)"
-
-echo
-[[ -n "$DASH_FQDN" ]] && echo "CRM Dashboard:  https://${DASH_FQDN}"
-[[ -n "$VA_FQDN" ]] && {
-  echo "Video Assist:   https://${VA_FQDN}"
-  echo "Step 7 launch:  https://${VA_FQDN}/?customer_id=${DEFAULT_CUSTOMER_ID}"
-  curl -fsS "https://${VA_FQDN}/healthz" | python -m json.tool 2>/dev/null || true
-}
-
-echo
-echo "Deployed applications:"
-az containerapp list --resource-group "$AZ_RG" \
-  --query '[].{Application:name,URL:properties.configuration.ingress.fqdn,Revision:properties.latestRevisionName}' \
-  --output table
+print_demo_urls
 
 echo
 echo "DEPLOYMENT COMPLETED SUCCESSFULLY"
 echo "Log: $LOG_FILE"
-echo "Tear down the billable stack (KEEPS the resource group $AZ_RG): bash wipe.sh"
-echo "Delete EVERYTHING incl. the resource group: bash wipe.sh --delete-rg"
+echo "Tear down EVERYTHING billable (persistent IP + cert preserved): bash wipe.sh"
+echo "Keep the RG + platform for a faster next build:                 bash wipe.sh --keep-rg"

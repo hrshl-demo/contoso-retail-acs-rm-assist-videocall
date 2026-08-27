@@ -2,9 +2,10 @@
 // The "Post message in a chat or channel" action renders HTML, so we send light
 // HTML (not markdown asterisks) and map the flow's Message to triggerBody()?['text'].
 
-// Base URL of the RM cockpit (CRM Container App), injected by phase9-videoassist/up.sh
-// from $NAME_CA_CRM + phase1's $CAE_DEFAULT_DOMAIN. Empty in local dev, in which case
-// every card degrades to exactly its current content with no deep link.
+// Base URL of the RM cockpit, injected by tools/deploy-videoassist-on-vm.sh as
+// https://<rmassist-host> — the SAME origin this app is served from, since Caddy serves the
+// cockpit at / and this app at /video. Empty in local dev, in which case every card degrades
+// to exactly its current content with no deep link.
 const CRM_BASE_URL = String(process.env.CRM_BASE_URL || '').replace(/\/+$/, '');
 
 /**

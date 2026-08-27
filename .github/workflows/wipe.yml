@@ -1,13 +1,15 @@
 name: Wipe Azure
 
 # Manual teardown. Click "Run workflow" and choose how far to tear down.
-#   keep-rg    (default) delete the billable stack, KEEP the resource group + platform
-#   delete-rg  full: delete the entire resource group and purge soft-deleted names
+#   full-purge (default) delete the ENTIRE billable resource group and purge soft-deleted
+#                        Cognitive Services names. The persistent RG (static IP) and the
+#                        committed cert in infra/cert/ are NEVER touched.
+#   keep-rg              old behaviour: tear down phase by phase, KEEP the RG + platform
 #
 # NOTE: the runner's OIDC identity has Azure RBAC only (not Entra directory
 # roles), so it cannot delete the Graph app registration setup-graph.sh created
 # (WIPE_GRAPH_APP=0 below). Remove that app from the VM/Cloud Shell as an admin,
-# or run `bash wipe.sh --delete-rg` there. See docs/CICD.md.
+# or run `bash wipe.sh` there. See docs/CICD.md.
 
 on:
   workflow_dispatch:
@@ -15,8 +17,8 @@ on:
       scope:
         description: "Teardown scope"
         type: choice
-        options: [keep-rg, delete-rg]
-        default: keep-rg
+        options: [full-purge, keep-rg]
+        default: full-purge
 
 permissions:
   id-token: write
@@ -45,8 +47,8 @@ jobs:
           WIPE_GRAPH_APP: "0"   # runner can't touch Entra directory objects
         run: |
           set -euo pipefail
-          if [ "${{ inputs.scope }}" = "delete-rg" ]; then
-            bash wipe.sh --delete-rg
+          if [ "${{ inputs.scope }}" = "keep-rg" ]; then
+            bash wipe.sh --keep-rg
           else
             bash wipe.sh
           fi

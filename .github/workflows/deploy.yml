@@ -1,9 +1,13 @@
 name: Deploy to Azure
 
-# Manual, on-demand deploy of the billable stack. Click "Run workflow", choose
-# the chat-model SKU, and a GitHub-hosted runner logs into Azure with OIDC (no
-# stored passwords) and runs build.sh. Nothing here runs automatically on push —
-# deploys never happen without you clicking the button.
+# Manual, on-demand deploy of the billable stack. Click "Run workflow" and a
+# GitHub-hosted runner logs into Azure with OIDC (no stored passwords) and runs
+# build.sh. Nothing here runs automatically on push — deploys never happen
+# without you clicking the button.
+#
+# The stack is a SINGLE VM behind Caddy: / is the RM Assist cockpit, /api the Tool
+# API, /video the live-call app, /console the Core Banking console. There are no
+# Container Apps and no container registry.
 #
 # One-time setup: run scripts/setup-github-oidc.sh (see docs/CICD.md) to create
 # the Azure trust + these repository secrets:
@@ -14,12 +18,6 @@ name: Deploy to Azure
 
 on:
   workflow_dispatch:
-    inputs:
-      deploy_type:
-        description: "Chat model SKU"
-        type: choice
-        options: [ptu, payg]
-        default: ptu
 
 permissions:
   id-token: write   # required for Azure OIDC federated login
@@ -72,11 +70,15 @@ jobs:
           add SCHEDULE_WEBHOOK_URL  "$SCHEDULE_WEBHOOK_URL"
           echo "Wrote $(wc -l < "$f") secret line(s) to $f"
 
-      - name: Build (${{ inputs.deploy_type }})
-        run: bash build.sh --type=${{ inputs.deploy_type }}
+      - name: Build
+        run: bash build.sh
 
       - name: Deployed URLs
         if: success()
         run: |
-          az containerapp list --resource-group rg-contoso-rmx-rakesh \
-            --query '[].{app:name,url:properties.configuration.ingress.fqdn}' -o table || true
+          echo "Everything is served from the single application VM behind Caddy:"
+          echo "  /        RM Assist cockpit"
+          echo "  /api     Tool API"
+          echo "  /video   Video Assist (Step 7 live call)"
+          echo "  /console Core Banking console"
+          bash -c 'source infra/common/env.sh >/dev/null 2>&1 && print_demo_urls' || true

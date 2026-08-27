@@ -51,7 +51,7 @@ Every AI card (nudge, answer, synopsis, consent-gated case) now ends with a line
 like:
 
 ```html
-<b>🔎 <a href="https://ca-rmx-dashboard.<env>.azurecontainerapps.io/?customer=CTB-RTL-002&focus=VCALL-AB12CD34%3Aturn-7%3Anudge&kind=live_nudge">Open this nudge in RM Cockpit</a></b> — full evidence, runtime trace and drill-down.
+<b>🔎 <a href="https://rmassist.&lt;static-ip&gt;.nip.io/?customer=CTB-RTL-002&focus=VCALL-AB12CD34%3Aturn-7%3Anudge&kind=live_nudge">Open this nudge in RM Cockpit</a></b> — full evidence, runtime trace and drill-down.
 ```
 
 **This is just more HTML inside the existing `text` field.** If your flow already
@@ -69,10 +69,11 @@ The link resolves against `GET /insights/:eventId` on the video-call app, where
 cockpit also holds an SSE subscription (`GET /insights/stream`) so an open tab has
 usually cached the payload **before** the RM clicks, making the drawer instant.
 
-- The cockpit base URL is derived deterministically by
-  `infra/phase9-videoassist/up.sh` from `$NAME_CA_CRM` plus phase 1's
-  `$CAE_DEFAULT_DOMAIN`, and injected as `CRM_BASE_URL`. Override it by exporting
-  `CRM_BASE_URL` before the deploy.
+- The cockpit base URL is the VM's own origin, `https://<rmassist-host>`, injected as
+  `CRM_BASE_URL` by `tools/deploy-videoassist-on-vm.sh`. The cockpit and the call app are
+  the SAME origin now (Caddy serves the cockpit at `/` and the call app at `/video`), so
+  the deep link never crosses a hostname. Override by exporting `CRM_BASE_URL` before the
+  deploy.
 - If `CRM_BASE_URL` is unset (e.g. local dev), the extra line is simply omitted
   and every card is byte-identical to before.
 - The insight buffer is in-memory and bounded (`INSIGHT_STORE_MAX`, default 400),
@@ -188,7 +189,7 @@ places (do **not** commit real signed URLs):
 | `TEAMS_NUDGE_WEBHOOK_URL` | optional dedicated live-nudge flow (falls back to `TEAMS_WEBHOOK_URL`) |
 | `SCHEDULE_WEBHOOK_URL` | optional real booking → Outlook event/email → returns `joinUrl` |
 | `SCHEDULE_AVAILABILITY_WEBHOOK_URL` | optional real availability lookup for the Step-7 page |
-| `CRM_BASE_URL` | optional override for the "Open in RM Cockpit" deep-link base (auto-derived from `$NAME_CA_CRM` + `$CAE_DEFAULT_DOMAIN`) |
+| `CRM_BASE_URL` | optional override for the "Open in RM Cockpit" deep-link base (defaults to the VM's own origin, `https://<rmassist-host>`) |
 | `INSIGHT_STORE_MAX` | optional size of the in-memory insight ring buffer (default 400) |
 
 > **Security:** the webhook URL contains a signature (`sig=`) and is effectively a

@@ -107,4 +107,4 @@ Refuses anything matching ontology/openai/foundry/cognitive — your AI resource
 - Embeddings: if `text-embedding-3-small` isn't the exact deployment name, RAG silently falls back
   to full-portfolio grounding (synopsis/nudges still work). Set `AZURE_AI_EMBED_DEPLOYMENT` if you
   want vector retrieval and the name differs.
-- Container logs for debugging: `az containerapp logs show -n videoassist-web -g "$AZ_RG" --follow`.
+- Service logs for debugging: `ssh azureuser@<vm-ip> sudo journalctl -u rmx-videoassist --follow`.

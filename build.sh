@@ -105,29 +105,12 @@ if [[ "${COMMIT_ARTIFACTS:-1}" == "1" ]]; then
   bash tools/commit-artifacts.sh || echo "WARN: artifact commit/push reported an issue (non-fatal)." >&2
 fi
 
-VA_FQDN="$(az containerapp show --name "$NAME_CA_VIDEOASSIST" --resource-group "$AZ_RG" \
-  --query properties.configuration.ingress.fqdn --output tsv 2>/dev/null || true)"
-DASH_FQDN="$(az containerapp show --name "$NAME_CA_CRM" --resource-group "$AZ_RG" \
-  --query properties.configuration.ingress.fqdn --output tsv 2>/dev/null || true)"
-
-echo
-[[ -n "$DASH_FQDN" ]] && echo "CRM Dashboard:  https://${DASH_FQDN}"
-[[ -n "$VA_FQDN" ]] && {
-  echo "Video Assist:   https://${VA_FQDN}"
-  echo "Step 7 launch:  https://${VA_FQDN}/?customer_id=${DEFAULT_CUSTOMER_ID}"
-  curl -fsS "https://${VA_FQDN}/healthz" | python -m json.tool 2>/dev/null || true
-}
-
-echo
-echo "Deployed applications:"
-az containerapp list --resource-group "$AZ_RG" \
-  --query '[].{Application:name,URL:properties.configuration.ingress.fqdn,Revision:properties.latestRevisionName}' \
-  --output table
+print_demo_urls
 
 echo
 echo "BUILD COMPLETED SUCCESSFULLY"
 echo "Log: $LOG_FILE"
 echo "Stable RM Assist host (persistent cert): $(rmassist_host 2>/dev/null || echo 'rmassist.<ip>.nip.io')"
 echo "Regenerate the dataset + SOPs next time: bash build.sh --regenerate-data"
-echo "Tear down the billable stack (KEEPS the RG + foundation): bash wipe.sh"
-echo "Full purge incl. the resource group (persistent layer preserved): bash wipe.sh --delete-rg"
+echo "Tear down EVERYTHING billable (persistent IP + cert preserved): bash wipe.sh"
+echo "Keep the RG + platform for a faster next build:                 bash wipe.sh --keep-rg"

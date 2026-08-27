@@ -4,8 +4,8 @@
 #
 # This is step 1 of the 3-script model:
 #   1. build_rg.sh   run ONCE  — creates the resource group + Phase-1 platform
-#                    (Log Analytics, ACR, UAMI, Container Apps environment).
-#                    Non-billable except ACR Basic (~$5/mo). This is where any
+#                    (Log Analytics + user-assigned managed identity).
+#                    Fully non-billable: no ACR, no Container Apps environment. This is where any
 #                    RG-level, one-time setup is applied.
 #   2. build.sh      run PER DEMO — the billable stack (AI Foundry, chat + embedding
 #                    deployments, AI Search, ACS + Email, Speech, container apps).
@@ -35,8 +35,8 @@ source infra/common/env.sh
 
 echo
 echo "Foundation target: resource group $AZ_RG ($AZ_REGION)   [created ONCE — kept across demos]"
-echo "Creates (non-billable; ACR Basic ~\$5/mo is the only standing cost):"
-echo "  Log Analytics · ACR · UAMI · Container Apps environment"
+echo "Creates (fully non-billable; no standing compute cost):"
+echo "  Log Analytics · User-assigned managed identity"
 
 LOG_FILE="$HOME/rakesh-rm-assist-buildrg-$(date +%Y%m%d-%H%M%S).log"
 echo

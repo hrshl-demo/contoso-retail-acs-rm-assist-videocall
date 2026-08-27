@@ -93,10 +93,10 @@ $(printf '\033[1;32m╔═══════════════════
 $(printf '\033[1;32m║   Foundation ready (RG + platform) in %02d:%02d                   ║\033[0m' "$(( TOTAL/60 ))" "$(( TOTAL%60 ))")
 $(printf '\033[1;32m╚════════════════════════════════════════════════════════════╝\033[0m')
 
-Created (kept across demos — ACR Basic ~\$5/mo is the only standing cost):
-  Log Analytics · ACR · UAMI · Container Apps environment  in RG $AZ_RG
-Next: bash build.sh            (PTU, billable)
-  or: bash build.sh --type=payg (pay-as-you-go, billable)
+Created (kept across demos — no standing compute cost; the only permanent
+resource is the static IP, which lives in the separate persistent RG):
+  Log Analytics · User-assigned managed identity   in RG $AZ_RG
+Next: bash build.sh            (billable: gpt-5.4 + VM/Caddy/cert + data-gen)
 EOF
     ok "Foundation stage complete."
     exit 0
@@ -108,7 +108,7 @@ else
   # than failing with "run build_rg.sh first". This makes 'bash build.sh' a one-command
   # deploy from any state. Set AUTO_FOUNDATION=0 to restore the old hard stop.
   if foundation_present; then
-    ok "Foundation present: RG + ACR + UAMI + Container Apps env."
+    ok "Foundation present: RG + Log Analytics + UAMI."
     regen_phase1_outputs
   elif [[ "${AUTO_FOUNDATION:-1}" == "1" ]]; then
     warn "Foundation missing/incomplete: ${FOUNDATION_MISSING[*]}"

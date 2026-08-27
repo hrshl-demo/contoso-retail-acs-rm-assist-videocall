@@ -101,7 +101,7 @@ Deletes the billable stack this demo created:
   • Embedding deployment              $AOAI_EMBED_DEPLOYMENT_NAME ($AOAI_EMBED_SKU_NAME)
   • AI Search / ACS / Speech          $NAME_SEARCH / $NAME_ACS / $NAME_SPEECH
 $([ "$WIPE_DELETE_RG" == "1" ] && echo "  • VM host + disk/NIC/NSG/VNet       $NAME_VM (deleted with the RG)")
-$([ "$WIPE_DELETE_RG" == "1" ] && echo "  • Container Apps / ACR / UAMI / Log Analytics (Phase 1 platform)" || { [ "${KEEP_PLATFORM:-0}" == "1" ] && echo "  • Container Apps (KEEPS ACR / UAMI / Log Analytics — run once by build_rg.sh)" || echo "  • Container Apps / ACR / UAMI / Log Analytics (Phase 1 platform)"; })
+$([ "$WIPE_DELETE_RG" == "1" ] && echo "  • UAMI / Log Analytics              (Phase 1 platform)" || { [ "${KEEP_PLATFORM:-0}" == "1" ] && echo "  • (KEEPS UAMI / Log Analytics — the Phase 1 platform build_rg.sh created)" || echo "  • UAMI / Log Analytics              (Phase 1 platform)"; })
 PRESERVED (never touched by wipe): persistent RG $AZ_RG_PERSISTENT (static IP + committed cert), and all committed git artifacts (data/contosobank, docs/sop, infra/cert).
 $([ "$WIPE_DELETE_RG" == "1" ] && [ "$WIPE_PURGE_SOFT_DELETED" == "1" ] && echo "Then purges soft-deleted $NAME_AISERVICES and $NAME_SPEECH so names free up.")
 $([ "${WIPE_GRAPH_APP:-1}" == "1" ] && echo "Also removes the stray Entra app registration '${GRAPH_APP_NAME:-contoso-videoassist-rm-calendar}' (setup-graph.sh).")
@@ -251,7 +251,7 @@ echo ""
 # Clear local state that references torn-down resources (keeps phase1 outputs if platform kept).
 wipe_local_state
 if [[ "${KEEP_PLATFORM:-0}" == "1" ]]; then
-  ok "Foundation kept (RG + Log Analytics / ACR / UAMI / Container Apps env). Re-run a demo: bash build.sh [--type=payg]"
+  ok "Foundation kept (RG + Log Analytics / UAMI). Re-run a demo: bash build.sh"
 else
   ok "Done. Re-run the demo with a single command: bash build.sh  (foundation auto-created if missing)"
 fi

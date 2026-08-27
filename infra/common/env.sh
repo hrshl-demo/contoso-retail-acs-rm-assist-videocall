@@ -637,7 +637,7 @@ ensure_toolapi_bearer() {
 
 # -------------------------------------------------------------------------------------
 # foundation_present — NON-FATAL predicate. Returns 0 if the non-billable foundation
-# (RG + ACR + UAMI + Container Apps env) is fully present, 1 if anything is missing.
+# (RG + Log Analytics + UAMI) is fully present, 1 if anything is missing.
 # Sets the global array FOUNDATION_MISSING to the human-readable names that are absent,
 # so callers can decide whether to auto-build it or fail. Prints nothing.
 foundation_present() {

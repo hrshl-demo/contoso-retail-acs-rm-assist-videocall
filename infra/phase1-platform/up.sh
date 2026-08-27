@@ -2,7 +2,9 @@
 # infra/phase1-platform/up.sh
 #
 # Phase 1 — Platform substrate.
-# Deploys: Log Analytics, ACR, UAMI, Container Apps Environment, role assignments.
+# Deploys: Log Analytics + user-assigned managed identity.
+# No ACR and no Container Apps Environment: nothing is containerised any more — the three
+# apps run as native systemd services on the phase10 VM behind Caddy.
 #
 # Idempotent: re-running converges on the desired state (Bicep handles this).
 

@@ -6,10 +6,10 @@
 # names this phase creates. Refuses to touch anything else.
 #
 # Order matters:
-#   1. Container Apps Environment (has dependents in later phases - error if any exist)
-#   2. ACR
-#   3. Log Analytics
-#   4. UAMI
+#   1. Log Analytics
+#   2. UAMI
+# (There is no Container Apps Environment and no ACR to delete any more — nothing is
+# containerised; the apps run as systemd services on the phase10 VM.)
 # Role assignments cascade with their scope resource, so we don't need to delete them explicitly.
 
 set -euo pipefail

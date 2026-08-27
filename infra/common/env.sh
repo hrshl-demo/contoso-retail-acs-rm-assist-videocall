@@ -267,10 +267,14 @@ export AZURE_SPEECH_REGION="${AZURE_SPEECH_REGION:-$AZ_REGION_SPEECH}"
 export AZURE_SPEECH_RESOURCE_ID="${AZURE_SPEECH_RESOURCE_ID:-/subscriptions/${AZ_SUBSCRIPTION_ID}/resourceGroups/${AZ_RG}/providers/Microsoft.CognitiveServices/accounts/${NAME_SPEECH}}"
 export ACS_DATA_LOCATION="${ACS_DATA_LOCATION:-India}"
 # In-call synopsis/nudge model. When VOICE_MODEL_ENABLED=1 this points at the dedicated
-# reasoning voice deployment created by phase2; otherwise it falls back to the
-# DEPLOY_TYPE-selected chat deployment (the original behaviour).
-# ROLLBACK LEVER: if in-call latency regresses, set VOICE_AI_FAST_DEPLOYMENT (or both)
-# back to "$AOAI_CHAT_DEPLOYMENT_NAME" — the fast classifier is the latency-critical one.
+# gpt-5.4-mini voice deployment created by phase2; otherwise it falls back to the main
+# chat deployment (gpt-5.4), which also works but is the larger, slower model.
+# ROLLBACK LEVER (edit this file — no command-line flag or inline env var needed):
+#   * set VOICE_MODEL_ENABLED=0 above to move the whole live-call path back to the chat
+#     deployment;
+#   * or replace the default on the VOICE_AI_FAST_DEPLOYMENT line below with
+#     "$AOAI_CHAT_DEPLOYMENT_NAME" to move only the latency-critical fast classifier.
+# Then simply re-run `bash build.sh`.
 if [[ "${VOICE_MODEL_ENABLED:-1}" == "1" ]]; then
   export VOICE_AI_CHAT_DEPLOYMENT="${VOICE_AI_CHAT_DEPLOYMENT:-$AOAI_VOICE_DEPLOYMENT_NAME}"
 else
@@ -278,13 +282,25 @@ else
 fi
 export VOICE_AI_FAST_DEPLOYMENT="${VOICE_AI_FAST_DEPLOYMENT:-$VOICE_AI_CHAT_DEPLOYMENT}"
 # Deployment names (comma-separated) that must use the reasoning-model request shape
-# (reasoning_effort + max_completion_tokens, no temperature). Empty when the voice model
-# is disabled, which restores the original request shape exactly.
+# (reasoning_effort + max_completion_tokens, no temperature).
+#
+# IMPORTANT on this base: the CHAT model is gpt-5.4, which is ITSELF a reasoning model, so
+# the chat deployment must be listed too — otherwise the CRM/backend narration path would
+# keep sending temperature + max_tokens to a model that rejects them. Membership is derived
+# from the MODEL name (authoritative), not the deployment name, so retargeting
+# AOAI_CHAT_MODEL_NAME back to a non-reasoning model (e.g. gpt-4.1-mini) automatically drops
+# it from the list rather than silently forcing the wrong request shape.
+# The app code also name-matches gpt-5 / o-series as a fallback, but listing deployments
+# explicitly means a renamed deployment cannot slip through.
+_rx_deployments=""
+case "$AOAI_CHAT_MODEL_NAME" in
+  gpt-5*|o1*|o3*|o4*) _rx_deployments="$AOAI_CHAT_DEPLOYMENT_NAME" ;;
+esac
 if [[ "${VOICE_MODEL_ENABLED:-1}" == "1" ]]; then
-  export AI_REASONING_DEPLOYMENTS="${AI_REASONING_DEPLOYMENTS:-$AOAI_VOICE_DEPLOYMENT_NAME}"
-else
-  export AI_REASONING_DEPLOYMENTS="${AI_REASONING_DEPLOYMENTS:-}"
+  _rx_deployments="${_rx_deployments:+$_rx_deployments,}$AOAI_VOICE_DEPLOYMENT_NAME"
 fi
+export AI_REASONING_DEPLOYMENTS="${AI_REASONING_DEPLOYMENTS:-$_rx_deployments}"
+unset _rx_deployments
 export VOICE_AI_WARMUP="${VOICE_AI_WARMUP:-1}"
 # Voice Live is a MANAGED MODEL IDENTIFIER (not a deployment / not a resource, no extra cost).
 # Referenced by phase2 (emits it to outputs.env) and phase4 (Tool API env). The lean

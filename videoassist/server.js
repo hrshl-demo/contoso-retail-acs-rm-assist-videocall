@@ -1,4 +1,5 @@
 ﻿import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { CommunicationIdentityClient } from '@azure/communication-identity';
@@ -905,18 +906,66 @@ app.get('/call/:id/join', (req, res) => {
 });
 
 // The customer mobile banking portal (logged-in journey; starts the instant call).
-app.get('/bank', (req, res) => res.sendFile(path.join(publicDir, 'bank.html')));
+app.get('/bank', (req, res) => sendHtml(res, path.join(publicDir, 'bank.html')));
 
 // Static front-end with asset-safe SPA fallback. The scheduling page is plain
 // static under /public so the vite-built call app (dist) is left untouched.
 const distDir = path.join(__dirname, 'dist');
 const publicDir = path.join(__dirname, 'public');
-app.use(express.static(publicDir));
-app.get('/schedule', (req, res) => res.sendFile(path.join(publicDir, 'schedule.html')));
-app.use(express.static(distDir));
+
+// ---- Public path prefix injection -------------------------------------------------
+// Behind Caddy this app lives at https://<host>/video/*, and `handle_path` STRIPS the
+// prefix before proxying — so Express sees "/" and has no idea it is mounted anywhere.
+// The BROWSER still needs the prefix on every URL it builds, and there are two distinct
+// kinds of URL, which is why one mechanism alone is not enough:
+//
+//   1. Bundled asset URLs in dist/index.html  -> handled at BUILD time by Vite's `base`.
+//   2. fetch() string literals in app code    -> Vite does NOT touch these. They are
+//      handled HERE, at serve time, by injecting window.__VA_BASE__ into every HTML
+//      response. client/main.js, public/bank.js and public/schedule.js all read it
+//      through a single api() helper rather than hard-coding the prefix.
+//
+// Also substitutes the literal token __VA_BASE__ in HTML, which is how bank.html and
+// schedule.html reference their own CSS/JS. Those two are served by Express and are NOT
+// processed by Vite, so `base` never sees them.
+//
+// PUBLIC_BASE_PATH defaults to EMPTY, preserving the exact current behaviour for the
+// phase9 Container App (served at the root). The VM deploy sets it to "/video".
+const PUBLIC_BASE = String(process.env.PUBLIC_BASE_PATH || '').replace(/\/+$/, '');
+
+function sendHtml(res, file) {
+  let html;
+  try {
+    html = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    return res.status(404).send('Not found');
+  }
+  html = html.split('__VA_BASE__').join(PUBLIC_BASE);
+  // Injected as the first child of <head> so it is defined before ANY other script runs,
+  // including the module bundle and the classic scripts in bank.html / schedule.html.
+  const tag = `<script>window.__VA_BASE__=${JSON.stringify(PUBLIC_BASE)};</script>`;
+  if (/<head(\s[^>]*)?>/i.test(html)) html = html.replace(/<head(\s[^>]*)?>/i, (m) => m + tag);
+  else html = tag + html;
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  // The prefix is baked into the response, so a cached copy from a different mount point
+  // would be actively wrong rather than merely stale.
+  res.set('Cache-Control', 'no-store');
+  return res.send(html);
+}
+
+app.use(express.static(publicDir, { index: false }));
+app.get('/schedule', (req, res) => sendHtml(res, path.join(publicDir, 'schedule.html')));
+// An explicitly requested /index.html must be routed BEFORE the static mount, or
+// express.static serves it raw with a literal __VA_BASE__ left in the markup.
+app.get('/index.html', (req, res) => sendHtml(res, path.join(distDir, 'index.html')));
+// `index: false` on BOTH static mounts is load-bearing, not tidiness. With the default,
+// express.static answers "/" with dist/index.html DIRECTLY and the request never reaches
+// the SPA fallback below — which would silently bypass sendHtml and serve the page with
+// window.__VA_BASE__ un-injected.
+app.use(express.static(distDir, { index: false }));
 app.get('*', (req, res) => {
   if (path.extname(req.path)) return res.status(404).send('Not found');
-  res.sendFile(path.join(distDir, 'index.html'));
+  sendHtml(res, path.join(distDir, 'index.html'));
 });
 
 const _listenArgs = host ? [port, host] : [port];

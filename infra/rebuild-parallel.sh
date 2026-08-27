@@ -206,6 +206,15 @@ if [[ "${SKIP_VMHOST:-0}" != "1" ]]; then
     bash "$SCRIPT_DIR/../tools/deploy-crm-on-vm.sh" || abort "deploy-crm-on-vm"
   fi
 
+  # Deploy Video Assist onto the VM (Phase D) as a native systemd service behind /video.
+  # Runs alongside the phase9 Container App until Phase E retires it. SKIP_VIDEOASSIST_VM=1
+  # opts out. Must run AFTER the cockpit deploy so the CRM's injected VIDEOASSIST_URL and
+  # the app it points at come up in a sensible order.
+  if [[ "${SKIP_VIDEOASSIST_VM:-0}" != "1" ]]; then
+    log "Deploying Video Assist onto the VM (systemd + Caddy /video)..."
+    bash "$SCRIPT_DIR/../tools/deploy-videoassist-on-vm.sh" || abort "deploy-videoassist-on-vm"
+  fi
+
   # Deploy the static Core Banking & CRM console + dataset to the VM's Caddy webroot so it is
   # served over the reusable TLS host. Runs whenever the VM is up (independent of SKIP_DATAGEN);
   # the dataset is either freshly generated above or the committed baseline. SKIP_CONSOLE=1 skips.

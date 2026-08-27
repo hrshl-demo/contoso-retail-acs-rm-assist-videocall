@@ -6,8 +6,11 @@ consent.err
 # Per-phase generated state (endpoints, keys, image refs) — regenerated per build
 infra/**/outputs.env
 infra/phase10-vmhost/toolapi-outputs.env
+infra/phase10-vmhost/videoassist-outputs.env
 infra/common/prebuilt_images.env
 tools/.toolapi.env.rendered
+tools/.videoassist.env.rendered
+tools/.crm-stage/
 
 # Node / build artifacts
 node_modules/

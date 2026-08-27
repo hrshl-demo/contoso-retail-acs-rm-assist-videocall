@@ -5,6 +5,11 @@
    using only the booking id (?booking=...). */
 (function () {
   var $ = function (id) { return document.getElementById(id); };
+  // Public path prefix, injected into bank.html by server.js (sendHtml). Empty when this
+  // app is served at the root, so api('/me') === '/me' and nothing changes there. Behind
+  // Caddy it is '/video'. Never hard-code a leading-slash request path below.
+  var API_BASE = (window.__VA_BASE__ || '');
+  var api = function (p) { return API_BASE + p; };
   var qs = new URLSearchParams(location.search);
   var CID = qs.get('customer_id') || qs.get('customerId') || 'CTB-RTL-002';
 
@@ -69,7 +74,7 @@
   }
 
   function loadProfile() {
-    fetch('/me?customer_id=' + encodeURIComponent(CID))
+    fetch(api('/me?customer_id=' + encodeURIComponent(CID)))
       .then(function (r) { return r.json(); })
       .then(render)
       .catch(function () { /* baked defaults already in the HTML */ });
@@ -101,7 +106,7 @@
     $('phaseWait').classList.remove('hide'); $('phaseReady').classList.add('hide');
     $('ringTime').textContent = '…'; setStep('notify');
     var ring0 = $('ring'); ring0.classList.remove('is-final', 'is-done'); paintRing(0);
-    fetch('/call/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId: CID }) })
+    fetch(api('/call/request'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId: CID }) })
       .then(function (r) { return r.json(); })
       .then(function (c) {
         if (!c || !c.id) throw new Error('no call');
@@ -145,7 +150,7 @@
 
   function pollStatus() {
     if (!call) return;
-    fetch('/call/' + encodeURIComponent(call.id)).then(function (r) { return r.json(); }).then(function (s) {
+    fetch(api('/call/' + encodeURIComponent(call.id))).then(function (r) { return r.json(); }).then(function (s) {
       if (s && s.joinReady) showReady();
     }).catch(function () {});
   }
@@ -158,7 +163,7 @@
 
   function join() {
     if (!call) return;
-    location.href = '/?booking=' + encodeURIComponent(call.id) + '&customer_id=' + encodeURIComponent(CID);
+    location.href = api('/?booking=' + encodeURIComponent(call.id) + '&customer_id=' + encodeURIComponent(CID));
   }
 
   /* ---------- wire ---------- */

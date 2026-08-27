@@ -68,6 +68,33 @@ __RMASSIST_HOST__ {
 	# Webroot health endpoint, kept for parity with the nginx config this replaced.
 	@healthz path /healthz
 
+	# --- WebSocket-safe compression -------------------------------------------------
+	# Matches everything EXCEPT a WebSocket upgrade request. Used to gate `encode` in the
+	# proxy blocks below, so an Upgrade is never routed through the compressor.
+	#
+	# WHY THIS IS NOT PARANOIA: caddyserver/caddy#6733 is an open bug where `encode` plus
+	# HTTP/2 hangs a WebSocket handshake whenever the CLIENT is expected to send the first
+	# message — the encode middleware delays the 101 while it decides whether to compress.
+	# This deployment enables h2 (see `protocols h1 h2` above), so that combination is live.
+	#
+	# AND WEBSOCKETS REALLY DO TRAVERSE THIS PROXY — through /api, which is not where the
+	# risk was originally assumed to be. backend/app/routes/acs.py:750 serves
+	# `WS /v1/acs/transcription/{session_id}` (ACS posts real-time transcription into it)
+	# and backend/app/routes/voice.py:467 serves the browser voice-copilot stream.
+	# By contrast the ACS Calling SDK and the Speech SDK used by /video connect DIRECTLY to
+	# *.communication.azure.com and *.stt.speech.microsoft.com — they never pass through
+	# Caddy at all (videoassist has no `ws` dependency and no upgrade handler). So the
+	# gate matters most on /api; it is applied to /video too because it costs nothing and
+	# the demo's capstone must not depend on that analysis staying true.
+	#
+	# SYMPTOM IF THIS GATE IS EVER LOST: the page loads and ordinary REST calls work, but
+	# the live transcription or voice stream simply hangs with no error — the WebSocket
+	# handshake never completes.
+	# ONE-LINE FIX during a demo: in /etc/caddy/Caddyfile, delete the `encode` line from
+	# the affected handle block, then `sudo systemctl reload caddy`. Compression is a
+	# nice-to-have; the socket is not.
+	@notws not header Connection *Upgrade*
+
 	# --- Bare-prefix redirects -------------------------------------------------------
 	# `redir` runs BEFORE the handle group in Caddy's directive order, and taking a NAMED
 	# matcher makes the argument parse unambiguous. That matters: the obvious-looking
@@ -97,7 +124,9 @@ __RMASSIST_HOST__ {
 	# Strips "/api", so the app sees /healthz, /crm/propose, ... exactly as it does today.
 	handle @api {
 		uri strip_prefix /api
-		encode zstd gzip
+		# @notws: never compress a WebSocket upgrade. /api carries REAL sockets —
+		# WS /v1/acs/transcription/{session_id} and the voice-copilot stream.
+		encode @notws zstd gzip
 		reverse_proxy __TOOLAPI_BIND__ {
 			header_up X-Forwarded-Proto https
 			header_up X-Real-IP {remote_host}
@@ -110,7 +139,10 @@ __RMASSIST_HOST__ {
 	# upgrades WebSockets, which the ACS calling SDK needs.
 	handle @video {
 		uri strip_prefix /video
-		encode zstd gzip
+		# @notws: defensive here. The ACS Calling and Speech SDKs talk directly to Azure
+		# and never traverse this proxy, so no socket is expected on /video today — but
+		# the capstone must not depend on that remaining true.
+		encode @notws zstd gzip
 		reverse_proxy __VIDEOASSIST_BIND__ {
 			header_up X-Forwarded-Proto https
 			header_up X-Real-IP {remote_host}

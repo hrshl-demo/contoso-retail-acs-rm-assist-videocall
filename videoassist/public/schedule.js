@@ -3,6 +3,10 @@
    Teams link prefilled (?link=...), so the live video call code is untouched. */
 (function () {
   var $ = function (id) { return document.getElementById(id); };
+  // Public path prefix, injected into schedule.html by server.js (sendHtml). Empty when
+  // served at the root; '/video' behind Caddy. Never hard-code a leading-slash path below.
+  var API_BASE = (window.__VA_BASE__ || '');
+  var api = function (p) { return API_BASE + p; };
   var qs = new URLSearchParams(location.search);
   var CID = qs.get('customer_id') || '';
   var selected = null;       // {startIso, time, label}
@@ -18,7 +22,7 @@
 
   /* ---------- availability ---------- */
   function loadAvailability() {
-    fetch('/availability?days=2').then(function (r) { return r.json(); }).then(function (data) {
+    fetch(api('/availability?days=2')).then(function (r) { return r.json(); }).then(function (data) {
       $('rmName').textContent = data.rm || 'Your Relationship Manager';
       $('rmAv').textContent = initials(data.rm);
       $('rmMeta').textContent = (data.source === 'rm-calendar' ? 'Live calendar availability' : 'Contoso Bank branch · next 2 working days');
@@ -54,7 +58,7 @@
   $('bookBtn').addEventListener('click', function () {
     if (!selected) return;
     $('bookBtn').disabled = true; $('bookHint').textContent = 'Booking…';
-    fetch('/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    fetch(api('/bookings'), { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ customerId: CID, name: $('name').value, contact: $('contact').value, note: $('note').value, slotIso: selected.startIso }) })
       .then(function (r) { return r.json(); }).then(function (b) {
         if (b.error) throw new Error(b.error);
@@ -83,7 +87,7 @@
   }
   function poll() {
     if (!booking) return;
-    fetch('/bookings/' + encodeURIComponent(booking.id)).then(function (r) { return r.json(); }).then(function (b) {
+    fetch(api('/bookings/' + encodeURIComponent(booking.id))).then(function (r) { return r.json(); }).then(function (b) {
       if (b && b.id) { booking = b; renderStatus(); if (b.meetingLink) stopPolling(); }
     }).catch(function () {});
   }
@@ -91,7 +95,7 @@
   function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
 
   /* ---------- join handoff (reuses the existing call app) ---------- */
-  function joinWith(link) { if (!link) return; location.href = '/?customer_id=' + encodeURIComponent(CID) + '&link=' + encodeURIComponent(link); }
+  function joinWith(link) { if (!link) return; location.href = api('/?customer_id=' + encodeURIComponent(CID) + '&link=' + encodeURIComponent(link)); }
   $('joinBtn').addEventListener('click', function () { joinWith(booking && booking.meetingLink); });
   $('manualJoin').addEventListener('click', function () { joinWith($('manualLink').value.trim()); });
   $('refreshBtn').addEventListener('click', poll);
@@ -100,7 +104,7 @@
   /* ---------- boot ---------- */
   var existing = null; try { existing = localStorage.getItem(LS); } catch (e) {}
   if (existing) {
-    fetch('/bookings/' + encodeURIComponent(existing)).then(function (r) { return r.ok ? r.json() : null; }).then(function (b) {
+    fetch(api('/bookings/' + encodeURIComponent(existing))).then(function (r) { return r.ok ? r.json() : null; }).then(function (b) {
       if (b && b.id) { booking = b; showConfirm(); startPolling(); } else { try { localStorage.removeItem(LS); } catch (e) {} loadAvailability(); }
     }).catch(loadAvailability);
   } else { loadAvailability(); }

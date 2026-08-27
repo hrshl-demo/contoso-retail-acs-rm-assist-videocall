@@ -6,6 +6,20 @@ import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
 const $ = (id) => document.getElementById(id);
 const log = (m) => { const el = $('log'); el.textContent += m + '\n'; el.scrollTop = el.scrollHeight; console.log(m); };
 
+// PUBLIC PATH PREFIX — the single place this app learns where it is mounted.
+//
+// Caddy serves this SPA at https://<host>/video/* and strips "/video" before proxying, so
+// the server never sees the prefix and cannot put it into these paths for us. Vite's `base`
+// rewrites bundled ASSET urls only — it does NOT rewrite the fetch() strings below, which is
+// exactly the class of bug that fails silently: the page loads perfectly and then every API
+// call 404s against the CRM webroot.
+//
+// window.__VA_BASE__ is injected into the HTML by server.js (sendHtml). It is '' when the app
+// is served at the root, so api('/token') === '/token' and nothing changes for that case.
+// ALWAYS build request URLs with api(); never hard-code a leading-slash path.
+const API_BASE = (typeof window !== 'undefined' && window.__VA_BASE__) || '';
+const api = (p) => API_BASE + p;
+
 let callClient, callAgent, deviceManager, call;
 let localVideoStream, localRenderer;
 let micOn = true, camOn = true;
@@ -150,7 +164,7 @@ if (IN_APP_BROWSER) {
 }
 
 async function fetchToken() {
-  const r = await fetch('/token');
+  const r = await fetch(api('/token'));
   if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error('Token service (' + r.status + ') ' + (b.error || '')); }
   return (await r.json()).token;
 }
@@ -221,7 +235,7 @@ async function prepareOpaqueJoin(bookingId, attempt) {
   if (input) input.style.display = 'none';
   if (btnLabel) btnLabel.textContent = 'Join now';
   try {
-    const r = await fetch('/call/' + encodeURIComponent(bookingId) + '/join');
+    const r = await fetch(api('/call/' + encodeURIComponent(bookingId) + '/join'));
     if (r.ok) { const j = await r.json(); if (j && j.link && input) { input.value = j.link; log('Secure call ready — tap Join now.'); return; } }
     if (r.status === 425 && attempt < 30) { setTimeout(function () { prepareOpaqueJoin(bookingId, attempt + 1); }, 1500); return; }
     log('Your call is being set up — please wait a moment, then tap Join now.');
@@ -239,7 +253,7 @@ async function onConnected() {
   void startRecognition();
   sessionStartPromise = (async () => {
     try {
-      const r = await fetch('/session/start', {
+      const r = await fetch(api('/session/start'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...(CUSTOMER_ID ? { customerId: CUSTOMER_ID } : {}), meetingLink: $('meetingLink').value.trim(), participantRole: PARTICIPANT_ROLE, participantName: PARTICIPANT_NAME, conversationType: CONVERSATION_TYPE }),
       });
@@ -266,7 +280,7 @@ function scheduleTranscriptPreview(text) {
     const candidate = latestPreviewText;
     if (!candidate || (candidate === lastPreviewSent) || Math.abs(candidate.length - lastPreviewSent.length) < 7) return;
     lastPreviewSent = candidate;
-    void fetch('/transcript/preview', {
+    void fetch(api('/transcript/preview'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
       body: JSON.stringify({ text: candidate, turnId: nextTurnId + 1, role: PARTICIPANT_ROLE, sessionId: voiceSessionId }),
     }).catch(() => {});
@@ -276,7 +290,7 @@ function scheduleTranscriptPreview(text) {
 /* customer-side transcription via Azure Speech (robust; reuses the call mic, no Web Speech) */
 async function startRecognition() {
   try {
-    const r = await fetch('/speech/token');
+    const r = await fetch(api('/speech/token'));
     if (!r.ok) { log('Speech token unavailable — transcription off. (Use ?debug=1 to simulate.)'); return; }
     const { token, region } = await r.json();
 
@@ -316,7 +330,7 @@ async function startRecognition() {
 
     // refresh the auth token every 8 minutes (tokens last ~10)
     tokenTimer = setInterval(async () => {
-      try { const rr = await fetch('/speech/token'); const d = await rr.json(); if (recognizer && d.token) recognizer.authorizationToken = d.token; } catch (_) {}
+      try { const rr = await fetch(api('/speech/token')); const d = await rr.json(); if (recognizer && d.token) recognizer.authorizationToken = d.token; } catch (_) {}
     }, 8 * 60 * 1000);
   } catch (e) { log('Transcription error: ' + (e?.message || e)); }
 }
@@ -330,7 +344,7 @@ function stopRecognition() {
 
 async function postTranscript(item) {
   try {
-    const r = await fetch('/transcript', {
+    const r = await fetch(api('/transcript'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
       body: JSON.stringify({ text: item.text, turnId: item.turnId, finalizedAt: item.finalizedAt, role: PARTICIPANT_ROLE, source: `azure_speech_${PARTICIPANT_ROLE}_mic`, sessionId: voiceSessionId }),
     });
@@ -375,7 +389,7 @@ async function finalizeCall() {
   if (finalizePromise) return finalizePromise;
   finalizePromise = (async () => {
     try {
-      const r = await fetch('/session/finalize', {
+      const r = await fetch(api('/session/finalize'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: voiceSessionId }),
       });
